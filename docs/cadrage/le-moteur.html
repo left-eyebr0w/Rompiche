@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadrage — Le moteur · Diorama sonore</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../index.html">
+          Diorama sonore
+          <span class="brand-sub">Documentation</span>
+        </a>
+        <nav>
+          <div class="nav-branch">
+            <span class="nav-branch-title">Branche · Cadrage</span>
+            <ul>
+              <li><a href="index.html">Présentation</a></li>
+              <li><a href="le-moteur.html" class="active">Le moteur (le cœur)</a></li>
+              <li><a href="architecture.html">Architecture &amp; coûts</a></li>
+              <li><a href="perimetre-v0.html">Périmètre de la v0</a></li>
+              <li><a href="decisions.html">Décisions &amp; points ouverts</a></li>
+              <li><a href="feuille-de-route.html">Feuille de route</a></li>
+            </ul>
+          </div>
+          <div class="nav-branch">
+            <span class="nav-branch-title">Autres branches</span>
+            <span class="nav-disabled">À venir</span>
+          </div>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <article>
+          <div class="breadcrumb">
+            <a href="../index.html">Documentation</a><span>/</span><a href="index.html">Cadrage</a><span>/</span>Le moteur
+          </div>
+
+          <span class="eyebrow">Branche Cadrage · §3</span>
+          <h1>Le modèle du moteur (le cœur)</h1>
+
+          <div class="callout">
+            <strong>Énoncé fondateur.</strong> La matrice d'interactions est la
+            rencontre, dans le cube, des <strong>Émetteurs</strong> et des
+            <strong>Surfaces</strong> présents — médiée par l'<strong>état du
+            monde</strong>, et entendue depuis la <strong>tête de
+            l'auditeur</strong> (mobile) à travers l'<strong>acoustique du
+            cube</strong>.
+          </div>
+
+          <h2>3.1 Graphe de scène et éléments</h2>
+          <p>
+            La scène est un graphe peuplé d'<strong>éléments</strong>. Chaque
+            élément possède une <strong>position</strong>, un ou plusieurs
+            <strong>rôles</strong> (<em>Émetteur</em>, <em>Surface</em> avec
+            matériau, <em>Résonateur</em>) et un jeu de
+            <strong>paramètres finement exposés</strong> (densité, plage de
+            hauteur, gain, étalement stéréo, filtrage, enveloppe…), conçus pour
+            qu'une future couche visuelle puisse s'y coupler sans réécriture.
+          </p>
+          <p>
+            Le modèle de rôles permet la composition <strong>hybride</strong> :
+            un <em>arbre</em> est une Surface (ses feuilles reçoivent la pluie)
+            <strong>et</strong> un Émetteur (il bruisse sous le vent) ; une
+            <em>pluie</em> est un Émetteur global ; une <em>plaque de tôle</em>
+            est une Surface qui peut aussi tinter.
+          </p>
+
+          <h2>3.2 Moteur d'interactions</h2>
+          <p>
+            Chaque couple <strong>(Émetteur × Matériau de surface)</strong>
+            déclenche un <strong>générateur dédié</strong> (pluie×métal,
+            pluie×terre, …). Une scène contenant métal + terre fait simplement
+            tourner deux générateurs en parallèle :
+            <strong>pas d'explosion combinatoire</strong>.
+          </p>
+          <p>
+            Événements <strong>continus</strong> (ruisseau, vent, pluie) et
+            <strong>ponctuels</strong> (chant d'oiseau, craquement).
+          </p>
+
+          <h2>3.3 Synthèse granulaire à partir de samples</h2>
+          <p>
+            Banques de <strong>grains</strong> (impacts individuels réels)
+            dispersés procéduralement (timing, hauteur, gain, panoramique
+            randomisés). La <strong>densité</strong> est pilotée par un paramètre
+            d'intensité → son <strong>infini, non répétitif</strong>, gardant le
+            réalisme du sample tout en réagissant aux paramètres.
+          </p>
+          <div class="callout muted">
+            <strong>Banque (résolu v0.4).</strong> Elle fournit des
+            <strong>grains isolés</strong> (impacts courts) → ils alimentent
+            directement la synthèse, <strong>sans étape de segmentation</strong>.
+          </div>
+
+          <h2>3.4 Couche de simulation — état du monde</h2>
+          <p>Paramètres globaux de <strong>modulation</strong> (pas du son) :</p>
+          <ul>
+            <li>
+              <strong>Horloge</strong> synchronisée au
+              <strong>fuseau horaire réel du joueur</strong> → le diorama épouse
+              l'heure locale réelle. Pas de contrôle de temps dans l'UI.
+              Découpage par <strong>seuils d'horloge simples</strong> (aube /
+              jour / crépuscule / nuit) — <strong>pas de géolocalisation ni de
+              latitude</strong> requise.
+            </li>
+            <li>
+              <strong>Météo : modèle en intensités continues</strong> (paramètre
+              [0–1] pilotant la densité de grains et les paramètres des
+              générateurs). <strong>Pour le proto, ce paramètre est épinglé à
+              {0, 1} (on/off)</strong> — simplification d'usage, sans changement
+              d'architecture, le continu restant activable sans réécriture.
+            </li>
+          </ul>
+
+          <h2>3.5 Spatialisation binaurale — bus de 6 points solidaire de la tête</h2>
+          <p>
+            <strong>Modèle (v0.4).</strong> Un <strong>auditeur unique</strong>
+            (la tête du personnage), en <strong>déplacement continu et libre
+            dans le cube dès le proto</strong>. Autour de la tête,
+            <strong>6 points</strong> forment un <strong>bus de haut-parleurs
+            virtuels</strong> solidaire d'elle.
+          </p>
+          <p>Mécanique :</p>
+          <ol>
+            <li>
+              Toutes les sources sont panoramiquées (direction + distance) dans
+              les <strong>6 canaux</strong> du bus.
+            </li>
+            <li>
+              <strong>Seuls ces 6 canaux</strong> sont convolués en
+              <strong>HRTF</strong> → sortie binaurale.
+            </li>
+          </ol>
+          <div class="callout">
+            <strong>Bénéfice clé</strong> (réconcilie priorités 1 et 2) : le coût
+            de spatialisation est <strong>fixe (6 convolutions)</strong>,
+            indépendant du nombre de grains joués.
+          </div>
+          <div class="callout muted">
+            <strong>Géométrie verrouillée (v0.3).</strong> Les 6 points sont les
+            <strong>6 faces du cube</strong> autour de la tête (avant / arrière /
+            gauche / droite / haut / bas), soit une reproduction
+            <strong>3D avec élévation</strong>. C'est la disposition cube la plus
+            économe ; la localisation des sources situées entre deux axes est
+            interpolée. Densification possible (8, 12 points) si la précision le
+            justifie.
+          </div>
+
+          <h2>3.6 Espace acoustique — le cube comme pièce</h2>
+          <p>
+            Le cube est une <strong>pièce</strong> dont les faces portent des
+            <strong>matériaux acoustiques</strong> (réverbération / occlusion).
+            Avec un auditeur <strong>en déplacement continu</strong>, on
+            <strong>sépare</strong> :
+          </p>
+          <ul>
+            <li>
+              la <strong>direction</strong> → bus 6 canaux solidaire de la tête
+              (coût fixe, simple recalcul de gains) ;
+            </li>
+            <li>
+              l'<strong>acoustique</strong> → <strong>réverbération paramétrique
+              (algorithmique)</strong> dont les paramètres sont pré-calculés
+              <strong>par cellule d'une grille</strong> du cube et
+              <strong>interpolés en continu</strong> au fil du déplacement
+              (préférée à un crossfade de réponses impulsionnelles, source
+              d'artefacts).
+            </li>
+          </ul>
+          <p>
+            Le <strong>morphing du soundfield</strong> est, du coup, un
+            comportement <strong>permanent</strong> : c'est cette interpolation
+            continue pendant le déplacement.
+          </p>
+
+          <div class="page-foot">
+            <a href="index.html">
+              <span class="pager-label">Précédent</span>
+              &larr; Présentation
+            </a>
+            <a href="architecture.html">
+              <span class="pager-label">Suivant</span>
+              Architecture &amp; coûts &rarr;
+            </a>
+          </div>
+        </article>
+      </main>
+    </div>
+  </body>
+</html>

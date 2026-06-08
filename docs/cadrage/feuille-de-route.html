@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadrage — Feuille de route · Diorama sonore</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../index.html">
+          Diorama sonore
+          <span class="brand-sub">Documentation</span>
+        </a>
+        <nav>
+          <div class="nav-branch">
+            <span class="nav-branch-title">Branche · Cadrage</span>
+            <ul>
+              <li><a href="index.html">Présentation</a></li>
+              <li><a href="le-moteur.html">Le moteur (le cœur)</a></li>
+              <li><a href="architecture.html">Architecture &amp; coûts</a></li>
+              <li><a href="perimetre-v0.html">Périmètre de la v0</a></li>
+              <li><a href="decisions.html">Décisions &amp; points ouverts</a></li>
+              <li><a href="feuille-de-route.html" class="active">Feuille de route</a></li>
+            </ul>
+          </div>
+          <div class="nav-branch">
+            <span class="nav-branch-title">Autres branches</span>
+            <span class="nav-disabled">À venir</span>
+          </div>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <article>
+          <div class="breadcrumb">
+            <a href="../index.html">Documentation</a><span>/</span><a href="index.html">Cadrage</a><span>/</span>Feuille de route
+          </div>
+
+          <span class="eyebrow">Branche Cadrage · Versions</span>
+          <h1>Feuille de route des versions</h1>
+          <p class="lead">
+            <em>Document vivant · récapitulatif des périmètres par version.</em>
+          </p>
+          <p>
+            Principe de découpage : la <strong>v0</strong> prouve le moteur, la
+            <strong>v1</strong> le rend jouable, la <strong>v2</strong> le polit
+            et l'ouvre au partage. Le moteur audio est livré
+            <strong>en entier dès la v0</strong> ; ce qui grandit ensuite, c'est
+            l'<strong>interactivité</strong>, le <strong>contenu</strong> et les
+            <strong>visuels</strong> — pas le cœur audio.
+          </p>
+          <div class="callout muted">
+            Seule la v0 est spécifiée finement (voir
+            <a href="perimetre-v0.html">Périmètre de la v0</a>). Les v1 et v2
+            sont <strong>indicatives et à affiner</strong> (TBD).
+          </div>
+
+          <h2>v0 — Prototype <span class="tag spec">spécifiée</span></h2>
+          <p>Validation du moteur. Spec détaillée : voir cette même branche.</p>
+          <ul>
+            <li>
+              <strong>Moteur audio complet</strong> (full features) : éléments à
+              rôles, matrice d'interactions, synthèse granulaire, état du monde
+              (horloge à seuils + météo), bus 6 canaux solidaire de la tête,
+              rendu HRTF, réverbération paramétrique, déplacement continu de
+              l'auditeur.
+            </li>
+            <li>
+              <strong>Sons :</strong> uniquement
+              <strong>pluie (on/off) × {métal, terre}</strong>.
+            </li>
+            <li>
+              <strong>Graphismes :</strong> <strong>wireframe</strong> en
+              <strong>noir / gris / blanc</strong> uniquement.
+            </li>
+            <li>
+              <strong>Interface :</strong> seulement les contrôles nécessaires
+              pour <strong>tester le moteur</strong> (déplacer l'auditeur,
+              basculer la météo, activer / désactiver les éléments).
+            </li>
+            <li>
+              <strong>Contenu :</strong> <strong>une seule scène vitrine</strong>,
+              montrant le maximum de ce que le moteur sait faire.
+            </li>
+          </ul>
+          <p>
+            <strong>Hors périmètre v0</strong> (repoussé en v1+) : édition de
+            diorama, sauvegarde, couche visuelle, multiplicité de scènes / objets
+            / matériaux / sons.
+          </p>
+
+          <h2>v1 — Version jouable / interactive <span class="tag tbd">TBD</span></h2>
+          <p>
+            Transforme la scène vitrine en véritable
+            <strong>bac à sable créatif</strong>.
+          </p>
+          <ul>
+            <li><strong>Couche visuelle low-poly</strong> couplée aux paramètres des éléments.</li>
+            <li><strong>Sauvegarde des dioramas</strong> (persistance locale ; PWA hors-ligne).</li>
+            <li><strong>Modification du terrain.</strong></li>
+            <li>
+              <strong>Plus d'objets</strong>, <strong>plus de matériaux</strong>,
+              <strong>plus de sons</strong> (extension de la matrice
+              d'interactions).
+            </li>
+          </ul>
+          <div class="callout muted">
+            <em>Candidate possible :</em> montée en HRTF custom / ambisonique
+            pour la qualité d'écoute.
+          </div>
+
+          <h2>v2 — Polish de la v1 <span class="tag tbd">TBD</span></h2>
+          <p>Enrichissement et ouverture.</p>
+          <ul>
+            <li><strong>Partage des dioramas.</strong></li>
+            <li><strong>Faune.</strong></li>
+            <li><strong>Animations.</strong></li>
+            <li><strong>Écosystèmes.</strong></li>
+            <li>etc.</li>
+          </ul>
+
+          <h2>Notes de séquencement</h2>
+          <ul>
+            <li>L'ordre interne de v1 et v2 reste à arbitrer.</li>
+            <li>
+              L'architecture v0 a été conçue pour que ces ajouts (visuels,
+              contenu, persistance, partage) se branchent
+              <strong>sans réécriture du moteur</strong> — d'où le découplage
+              audio / rendu et les paramètres d'éléments finement exposés.
+            </li>
+          </ul>
+
+          <div class="page-foot">
+            <a href="decisions.html">
+              <span class="pager-label">Précédent</span>
+              &larr; Décisions &amp; points ouverts
+            </a>
+            <a href="../index.html">
+              <span class="pager-label">Retour</span>
+              Accueil de la documentation &rarr;
+            </a>
+          </div>
+        </article>
+      </main>
+    </div>
+  </body>
+</html>

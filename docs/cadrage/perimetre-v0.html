@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadrage — Périmètre de la v0 · Diorama sonore</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../index.html">
+          Diorama sonore
+          <span class="brand-sub">Documentation</span>
+        </a>
+        <nav>
+          <div class="nav-branch">
+            <span class="nav-branch-title">Branche · Cadrage</span>
+            <ul>
+              <li><a href="index.html">Présentation</a></li>
+              <li><a href="le-moteur.html">Le moteur (le cœur)</a></li>
+              <li><a href="architecture.html">Architecture &amp; coûts</a></li>
+              <li><a href="perimetre-v0.html" class="active">Périmètre de la v0</a></li>
+              <li><a href="decisions.html">Décisions &amp; points ouverts</a></li>
+              <li><a href="feuille-de-route.html">Feuille de route</a></li>
+            </ul>
+          </div>
+          <div class="nav-branch">
+            <span class="nav-branch-title">Autres branches</span>
+            <span class="nav-disabled">À venir</span>
+          </div>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <article>
+          <div class="breadcrumb">
+            <a href="../index.html">Documentation</a><span>/</span><a href="index.html">Cadrage</a><span>/</span>Périmètre de la v0
+          </div>
+
+          <span class="eyebrow">Branche Cadrage · §6</span>
+          <h1>Périmètre de la v0 (prototype) <span class="tag spec">spécifiée</span></h1>
+          <p class="lead">
+            La v0 <strong>valide le moteur</strong>. Elle livre l'intégralité des
+            mécaniques audio ; tout le reste (édition, persistance, visuels,
+            contenu enrichi) est porté par les versions suivantes — voir la
+            <a href="feuille-de-route.html">feuille de route</a>.
+          </p>
+
+          <h2>Ce que livre la v0</h2>
+          <ul>
+            <li>
+              <strong>Moteur audio complet</strong>
+              <em>(full features au niveau moteur)</em> : graphe de scène et
+              éléments à rôles, matrice d'interactions, synthèse granulaire, état
+              du monde (horloge à seuils + météo), bus 6 canaux solidaire de la
+              tête, rendu HRTF, réverbération paramétrique, déplacement continu
+              de l'auditeur.
+            </li>
+            <li>
+              <strong>Sons :</strong> uniquement ceux spécifiés —
+              <strong>pluie (on/off) × {métal, terre}</strong>.
+            </li>
+            <li>
+              <strong>Rendu HRTF :</strong> natif au départ, derrière l'interface
+              de swap (montée en HRTF custom / ambisonique possible sans
+              réécriture — candidate v0-polish ou v1).
+            </li>
+            <li>
+              <strong>Graphismes :</strong> <strong>wireframe, en noir / gris /
+              blanc uniquement</strong>.
+            </li>
+            <li>
+              <strong>Interface :</strong> seulement les quelques contrôles
+              nécessaires pour <strong>tester le moteur</strong> (déplacer
+              l'auditeur, basculer la météo, activer / désactiver les éléments).
+              Pas d'édition de diorama, pas de sauvegarde.
+            </li>
+            <li>
+              <strong>Contenu :</strong> <strong>une seule scène</strong>, conçue
+              pour montrer le maximum de ce que le moteur sait faire.
+            </li>
+          </ul>
+
+          <div class="callout">
+            <strong>Objectif.</strong> Prouver que la mécanique du moteur « sonne
+            juste » — la pluie sur métal et sur terre, entendue depuis une tête
+            qui se déplace, dans l'acoustique du cube.
+          </div>
+
+          <h2>Hors périmètre v0</h2>
+          <p>Repoussé en v1+ :</p>
+          <ul>
+            <li>édition de diorama,</li>
+            <li>sauvegarde,</li>
+            <li>couche visuelle,</li>
+            <li>multiplicité de scènes / objets / matériaux / sons.</li>
+          </ul>
+
+          <div class="page-foot">
+            <a href="architecture.html">
+              <span class="pager-label">Précédent</span>
+              &larr; Architecture &amp; coûts
+            </a>
+            <a href="decisions.html">
+              <span class="pager-label">Suivant</span>
+              Décisions &amp; points ouverts &rarr;
+            </a>
+          </div>
+        </article>
+      </main>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadrage — Présentation · Diorama sonore</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../index.html">
+          Diorama sonore
+          <span class="brand-sub">Documentation</span>
+        </a>
+        <nav>
+          <div class="nav-branch">
+            <span class="nav-branch-title">Branche · Cadrage</span>
+            <ul>
+              <li><a href="index.html" class="active">Présentation</a></li>
+              <li><a href="le-moteur.html">Le moteur (le cœur)</a></li>
+              <li><a href="architecture.html">Architecture &amp; coûts</a></li>
+              <li><a href="perimetre-v0.html">Périmètre de la v0</a></li>
+              <li><a href="decisions.html">Décisions &amp; points ouverts</a></li>
+              <li><a href="feuille-de-route.html">Feuille de route</a></li>
+            </ul>
+          </div>
+          <div class="nav-branch">
+            <span class="nav-branch-title">Autres branches</span>
+            <span class="nav-disabled">À venir</span>
+          </div>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <article>
+          <div class="breadcrumb">
+            <a href="../index.html">Documentation</a><span>/</span>Cadrage<span>/</span>Présentation
+          </div>
+
+          <span class="eyebrow">Branche Cadrage</span>
+          <h1>Présentation &amp; principes</h1>
+          <p class="lead">
+            Cette branche cadre le projet : ce que l'on construit, pourquoi, et
+            selon quelles règles non-négociables. Elle s'appuie sur le cadrage
+            <strong>v0.5</strong> (document vivant) et la feuille de route des
+            versions.
+          </p>
+
+          <div class="callout muted">
+            <em>Nom de code : à définir.</em> Le cadrage spécifie la
+            <strong>v0 (prototype)</strong> ; les versions ultérieures sont
+            récapitulées dans la <a href="feuille-de-route.html">feuille de
+            route</a>. Les sections « vision, principes, modèle, architecture,
+            coût » sont structurelles et valent pour toutes les versions.
+          </div>
+
+          <h2>1. Vision</h2>
+          <p>
+            Permettre au joueur de <strong>créer de petits dioramas vivants au
+            format cube</strong>, low-poly (wireframe dans un premier temps), et
+            d'y placer un personnage pour écouter l'univers sonore qu'il a
+            composé.
+          </p>
+          <p>
+            L'objectif n'est pas visuel mais <strong>auditif</strong> :
+            maximiser l'immersion sonore au point que,
+            <em>les yeux fermés, le joueur puisse croire qu'il s'est téléporté à
+            l'intérieur du diorama</em>. Le moteur audio est le produit ; le
+            rendu visuel n'est qu'une vue de la même scène.
+          </p>
+
+          <h2>2. Principes non-négociables</h2>
+          <ol>
+            <li>
+              <strong>Priorité 1 — Qualité audio.</strong> Toute décision
+              arbitre en faveur du réalisme et de la crédibilité de l'écoute.
+            </li>
+            <li>
+              <strong>Priorité 2 — Faible coût computationnel.</strong> Sous la
+              contrainte de la priorité 1, on minimise la charge (cible :
+              navigateur, PWA, matériel grand public).
+            </li>
+            <li>
+              <strong>Fidélité causale et perceptive.</strong> On ne simule pas
+              la physique ; chaque son est rattaché de façon crédible à un
+              événement de la scène, avec des paramètres (intensité, matériau,
+              position) qui répondent de manière plausible.
+            </li>
+            <li>
+              <strong>Vrais samples comme matière première</strong>, recombinés
+              procéduralement (voir <a href="le-moteur.html">Le moteur</a>).
+            </li>
+            <li>
+              <strong>Découplage audio / rendu.</strong> Wireframes d'aujourd'hui
+              et visuels de demain se branchent sur le même graphe de scène,
+              sans réécriture du moteur.
+            </li>
+            <li>
+              <strong>Sandbox sans boucle d'engagement.</strong> Le plaisir est
+              dans la création et l'écoute.
+            </li>
+          </ol>
+
+          <div class="page-foot">
+            <span></span>
+            <a href="le-moteur.html">
+              <span class="pager-label">Suivant</span>
+              Le moteur (le cœur) &rarr;
+            </a>
+          </div>
+        </article>
+      </main>
+    </div>
+  </body>
+</html>
