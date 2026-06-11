@@ -1,0 +1,34 @@
+<!-- @dsCard group="Spacing" viewport="700x180" name="Spacing scale" subtitle="0.25rem base step · used via --space-*" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  html,body{margin:0;background:var(--bg);font-family:var(--font-mono);}
+  .wrap{padding:24px 28px;}
+  .lbl{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.14em;margin:0 0 16px;}
+  .scale{display:flex;align-items:flex-end;gap:14px;}
+  .item{display:flex;flex-direction:column;align-items:center;gap:8px;}
+  .bar{background:var(--noir);width:18px;border-radius:2px;}
+  .n{font-size:10px;color:var(--text-muted);}
+  .px{font-size:9px;color:var(--text-faint);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="lbl">Spacing scale · --space-1 … --space-9</p>
+  <div class="scale">
+    <div class="item"><div class="bar" style="height:4px"></div><span class="n">1</span><span class="px">4</span></div>
+    <div class="item"><div class="bar" style="height:8px"></div><span class="n">2</span><span class="px">8</span></div>
+    <div class="item"><div class="bar" style="height:12px"></div><span class="n">3</span><span class="px">12</span></div>
+    <div class="item"><div class="bar" style="height:16px"></div><span class="n">4</span><span class="px">16</span></div>
+    <div class="item"><div class="bar" style="height:24px"></div><span class="n">5</span><span class="px">24</span></div>
+    <div class="item"><div class="bar" style="height:32px"></div><span class="n">6</span><span class="px">32</span></div>
+    <div class="item"><div class="bar" style="height:40px"></div><span class="n">7</span><span class="px">40</span></div>
+    <div class="item"><div class="bar" style="height:48px"></div><span class="n">8</span><span class="px">48</span></div>
+    <div class="item"><div class="bar" style="height:64px"></div><span class="n">9</span><span class="px">64</span></div>
+  </div>
+</div>
+</body>
+</html>

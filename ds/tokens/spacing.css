@@ -1,0 +1,48 @@
+/* =========================================================
+   Diorama sonore — Spacing, radii, borders, shadow, motion
+   ---------------------------------------------------------
+   Restrained, document-like. Small radii (4–6px), hairline
+   borders, near-invisible shadows. Nothing glossy.
+   ========================================================= */
+
+:root {
+  /* ---- Spacing scale (rem) ---- */
+  --space-0: 0;
+  --space-1: 0.25rem;   /* 4 */
+  --space-2: 0.5rem;    /* 8 */
+  --space-3: 0.75rem;   /* 12 */
+  --space-4: 1rem;      /* 16 */
+  --space-5: 1.5rem;    /* 24 */
+  --space-6: 2rem;      /* 32 */
+  --space-7: 2.5rem;    /* 40 */
+  --space-8: 3rem;      /* 48 */
+  --space-9: 4rem;      /* 64 */
+
+  /* ---- Radii ---- (kept tight; pill only for tags) */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-pill: 999px;
+
+  /* ---- Border widths ---- */
+  --border-hair: 1px;
+  --border-bold: 2px;     /* active nav accent, emphasis */
+
+  /* ---- Shadows ---- (whisper-quiet; depth comes from value) */
+  --shadow-none: none;
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.10);
+
+  /* ---- Layout ---- */
+  --sidebar-w: 280px;
+  --content-max: 820px;
+
+  /* ---- Motion ---- (quick, linear-ish; no bounce) */
+  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1); /* @kind other */
+  --dur-fast: 0.12s;  /* @kind other */
+  --dur-base: 0.18s;  /* @kind other */
+  --dur-slow: 0.32s;  /* @kind other */
+}

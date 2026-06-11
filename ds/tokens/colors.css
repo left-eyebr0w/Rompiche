@@ -1,0 +1,63 @@
+/* =========================================================
+   Diorama sonore — Color tokens
+   ---------------------------------------------------------
+   Strict monochrome. The v0 spec is non-negotiable:
+   "graphismes wireframe, en noir / gris / blanc UNIQUEMENT".
+   No hue is permitted in the brand. All structure, depth and
+   emphasis is built from value alone.
+   ========================================================= */
+
+:root {
+  /* ---- Base ramp (noir → blanc) ---- */
+  --noir: #111111;       /* near-black — ink, solid fills */
+  --gris-900: #1c1c1c;   /* raised dark surfaces, hovers on noir */
+  --gris-700: #3a3a3a;   /* strong borders on dark, secondary ink */
+  --gris-500: #6e6e6e;   /* muted text, captions, disabled ink */
+  --gris-300: #b8b8b8;   /* hairlines on light, faint ink */
+  --gris-200: #d6d6d6;   /* default borders on light */
+  --gris-100: #ececec;   /* fills, code background, track */
+  --blanc: #ffffff;      /* paper, raised cards */
+  --bg: #fafafa;         /* app/page canvas (off-white) */
+
+  /* ---- Canvas value used inside the 3D wireframe viewport ---- */
+  --canvas-noir: #0d0d0d;     /* viewport backdrop (deepest) */
+  --wire: #ffffff;            /* primary wireframe stroke */
+  --wire-dim: #6e6e6e;        /* receding edges */
+  --wire-faint: #3a3a3a;      /* grid / construction lines */
+
+  /* =======================================================
+     Semantic aliases — author UI against these, not the ramp
+     ======================================================= */
+
+  /* Text (on light) */
+  --text-primary: var(--noir);
+  --text-secondary: var(--gris-700);
+  --text-muted: var(--gris-500);
+  --text-faint: var(--gris-300);
+  --text-inverse: var(--blanc);
+  --text-link: var(--noir);
+
+  /* Surfaces (light context) */
+  --surface-canvas: var(--bg);     /* furthest-back page */
+  --surface: var(--blanc);         /* card / panel */
+  --surface-sunken: var(--gris-100); /* wells, code, inputs */
+  --surface-ink: var(--noir);      /* inverted / solid-black surface */
+  --surface-ink-raised: var(--gris-900);
+
+  /* Borders */
+  --border: var(--gris-200);       /* default hairline */
+  --border-strong: var(--noir);    /* emphasis / active outline */
+  --border-muted: var(--gris-300);
+  --border-dark: var(--gris-700);  /* hairline on dark surfaces */
+
+  /* Interaction (monochrome — emphasis by value & weight) */
+  --accent: var(--noir);           /* the "primary" is simply ink */
+  --accent-text: var(--blanc);
+  --focus-ring: var(--noir);
+
+  /* Dark / viewport context aliases */
+  --on-ink-primary: var(--blanc);
+  --on-ink-muted: var(--gris-300);
+  --on-ink-faint: var(--gris-500);
+  --on-ink-border: var(--gris-700);
+}

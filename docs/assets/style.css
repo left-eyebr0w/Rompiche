@@ -1,26 +1,13 @@
 /* =========================================================
    Documentation — Diorama sonore
    Thème noir / gris / blanc (esthétique wireframe v0)
+   Tokens importés depuis ds/ (source canonique).
    ========================================================= */
 
-:root {
-  --noir: #111111;
-  --gris-900: #1c1c1c;
-  --gris-700: #3a3a3a;
-  --gris-500: #6e6e6e;
-  --gris-300: #b8b8b8;
-  --gris-200: #d6d6d6;
-  --gris-100: #ececec;
-  --blanc: #ffffff;
-  --bg: #fafafa;
-
-  --sidebar-w: 280px;
-  --content-max: 820px;
-
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
-  --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-}
+@import url("../../ds/tokens/fonts.css");
+@import url("../../ds/tokens/colors.css");
+@import url("../../ds/tokens/typography.css");
+@import url("../../ds/tokens/spacing.css");
 
 * {
   box-sizing: border-box;
@@ -32,7 +19,7 @@ html {
 
 body {
   margin: 0;
-  font-family: var(--font);
+  font-family: var(--font-sans);
   color: var(--noir);
   background: var(--bg);
   line-height: 1.65;
@@ -205,7 +192,7 @@ body {
 }
 
 .content code {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 0.86em;
   background: var(--gris-100);
   padding: 0.12em 0.4em;

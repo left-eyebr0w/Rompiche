@@ -1,0 +1,45 @@
+<!-- @dsCard group="Colors" viewport="700x190" name="Base ramp" subtitle="noir → blanc · the only values in the system" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  html,body{margin:0;background:var(--bg);font-family:var(--font-mono);}
+  .wrap{padding:22px 26px;}
+  .ramp{display:grid;grid-template-columns:repeat(9,1fr);gap:0;border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;}
+  .sw{height:78px;display:flex;align-items:flex-end;}
+  .meta{padding:9px 26px 0;display:grid;grid-template-columns:repeat(9,1fr);gap:0;}
+  .meta div{font-size:10px;color:var(--text-muted);letter-spacing:.02em;line-height:1.45;}
+  .meta .hex{color:var(--text-primary);}
+  .lbl{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.14em;margin:0 0 12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="lbl">Base ramp · value only, no hue</p>
+  <div class="ramp">
+    <div class="sw" style="background:var(--noir)"></div>
+    <div class="sw" style="background:var(--gris-900)"></div>
+    <div class="sw" style="background:var(--gris-700)"></div>
+    <div class="sw" style="background:var(--gris-500)"></div>
+    <div class="sw" style="background:var(--gris-300)"></div>
+    <div class="sw" style="background:var(--gris-200)"></div>
+    <div class="sw" style="background:var(--gris-100)"></div>
+    <div class="sw" style="background:var(--blanc)"></div>
+    <div class="sw" style="background:var(--bg)"></div>
+  </div>
+  <div class="meta">
+    <div>noir<br><span class="hex">#111111</span></div>
+    <div>900<br><span class="hex">#1c1c1c</span></div>
+    <div>700<br><span class="hex">#3a3a3a</span></div>
+    <div>500<br><span class="hex">#6e6e6e</span></div>
+    <div>300<br><span class="hex">#b8b8b8</span></div>
+    <div>200<br><span class="hex">#d6d6d6</span></div>
+    <div>100<br><span class="hex">#ececec</span></div>
+    <div>blanc<br><span class="hex">#ffffff</span></div>
+    <div>bg<br><span class="hex">#fafafa</span></div>
+  </div>
+</div>
+</body>
+</html>

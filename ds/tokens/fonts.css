@@ -1,0 +1,17 @@
+/* =========================================================
+   Diorama sonore — Webfonts
+   ---------------------------------------------------------
+   Brand type is IBM Plex (Sans + Mono): an engineered,
+   technical, monochrome-friendly family that matches the
+   product's "wireframe / audio engine / spec document"
+   character far better than the original system-font stack.
+
+   NOTE (substitution): the source repo used the OS system
+   stack (-apple-system / Segoe UI) for sans + the OS mono
+   stack. There were no bundled font files. IBM Plex is a
+   deliberate, flagged upgrade — see README "VISUAL
+   FOUNDATIONS / Typography". Loaded here from Google Fonts;
+   swap to self-hosted woff2 if offline use is required.
+   ========================================================= */
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap");

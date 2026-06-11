@@ -1,0 +1,11 @@
+/* =========================================================
+   Diorama sonore — Design System
+   Global entry point. Consumers link THIS file only.
+   Import order: fonts → colors → typography → spacing.
+   (This file is @import lines only — no rules.)
+   ========================================================= */
+
+@import url("tokens/fonts.css");
+@import url("tokens/colors.css");
+@import url("tokens/typography.css");
+@import url("tokens/spacing.css");

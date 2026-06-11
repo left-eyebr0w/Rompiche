@@ -1,0 +1,41 @@
+<!-- @dsCard group="Spacing" viewport="700x180" name="Shadows & motion" subtitle="whisper-quiet elevation · fast, no bounce" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  html,body{margin:0;background:var(--bg);font-family:var(--font-mono);}
+  .wrap{padding:26px 28px;display:flex;gap:40px;align-items:flex-start;}
+  .lbl{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.14em;margin:0 0 18px;}
+  .row{display:flex;gap:22px;}
+  .box{width:62px;height:50px;background:var(--surface);border:1px solid var(--border);border-radius:6px;}
+  .cap{font-size:9px;color:var(--text-muted);margin-top:8px;text-align:center;}
+  .motion{display:flex;flex-direction:column;gap:10px;}
+  .m{font-size:11px;color:var(--text-secondary);}
+  .m b{color:var(--text-primary);font-weight:600;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <p class="lbl">Shadow</p>
+    <div class="row">
+      <div><div class="box" style="box-shadow:var(--shadow-xs)"></div><div class="cap">xs · .04</div></div>
+      <div><div class="box" style="box-shadow:var(--shadow-sm)"></div><div class="cap">sm · .06</div></div>
+      <div><div class="box" style="box-shadow:var(--shadow-md)"></div><div class="cap">md · .06</div></div>
+      <div><div class="box" style="box-shadow:var(--shadow-lg)"></div><div class="cap">lg · .10</div></div>
+    </div>
+  </div>
+  <div>
+    <p class="lbl">Motion</p>
+    <div class="motion">
+      <div class="m"><b>fast</b> · 0.12s — hover / press</div>
+      <div class="m"><b>base</b> · 0.18s — toggles</div>
+      <div class="m"><b>slow</b> · 0.32s — panels</div>
+      <div class="m">ease · cubic-bezier(.2,0,.2,1) — <b>no bounce</b></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
