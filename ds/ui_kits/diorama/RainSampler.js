@@ -61,10 +61,10 @@ class ImpactReservoir {
 
 /* ── Couche 3 · émetteur multi-position par matériau — §9 ────────────────────
    UN émetteur par matériau, SECTORS voix Resonance : une par secteur d'azimut
-   autour de la tête. Chaque voix se place sur la moyenne pondérée des positions
-   MONDE des impacts récents de son secteur ; les grains sont routés vers la voix
-   de leur secteur. Direction, distance et enveloppement émergent de la géométrie
-   réelle — plus de centroïde angulaire (qui s'annulait au milieu d'une zone). */
+   autour de la tête. Chaque voix se place sur l'impact le plus PROCHE de sa
+   direction ; les grains sont routés vers la voix de leur secteur. Direction,
+   distance et enveloppement émergent de la géométrie réelle — plus de centroïde
+   angulaire (qui s'annulait au milieu d'une zone). */
 class MaterialEmitter {
   constructor(scene, ctx, material, coords) {
     this.material = material
@@ -73,11 +73,12 @@ class MaterialEmitter {
     this._buf = new Float32Array(256)
     const { METER, ground } = coords
 
-    /* Accumulateurs par secteur, réutilisés chaque frame (zéro allocation) */
-    this._accX = new Float64Array(SECTORS)
-    this._accY = new Float64Array(SECTORS)
-    this._accZ = new Float64Array(SECTORS)
-    this._accW = new Float64Array(SECTORS)
+    /* Scratch par secteur (réutilisé chaque frame, zéro allocation) : impact le
+       plus proche de la tête dans le secteur → position de la voix + distance². */
+    this._nearX = new Float64Array(SECTORS)
+    this._nearY = new Float64Array(SECTORS)
+    this._nearZ = new Float64Array(SECTORS)
+    this._nearD = new Float64Array(SECTORS)
     this._active = new Uint8Array(SECTORS) // secteur replacé au dernier update
 
     this.voices = []
@@ -105,28 +106,36 @@ class MaterialEmitter {
   }
 
   /* Replace les voix depuis le nuage d'impacts récents + la tête (monde).
-     Répartition par SECTEURS ANGULAIRES pondérés (correction 4) : chaque voix
-     prend la moyenne pondérée des positions MONDE des impacts de son secteur.
-     - Zone qui entoure l'auditeur → tous les secteurs actifs → enveloppement
-       réel, là où le centroïde angulaire s'annulait (« son de nulle part »).
+     Une voix par SECTEUR d'azimut, placée sur l'impact le plus PROCHE de la tête
+     dans ce secteur — PAS le centroïde du secteur : une grande zone a beaucoup
+     plus d'impacts loin que près (surface ∝ r²), donc le centroïde se déporte au
+     loin et l'atténuation de distance éteint les gouttes proches → « presque rien
+     au milieu ». Le plus proche garde la direction du secteur ET la distance
+     réelle de la goutte la plus proche (cf. §9 du diagnostic) :
+     - Zone qui entoure l'auditeur → plusieurs secteurs actifs, voix proches et
+       fortes tout autour → enveloppement réel, là où le centroïde « s'annulait ».
      - Patch localisé → 1-2 secteurs actifs → son pointé, distance réelle.
      - Positions en monde absolu (plus d'ancrage sur head.x/z, correction 2) :
        se déplacer change l'azimut ET la distance perçus, Resonance fait le reste.
      Un secteur sans impact est marqué inactif (sa voix garde sa position mais le
      prochain grain la recalera, cf. triggerGrain). */
   update(pts, head) {
-    const ax = this._accX, ay = this._accY, az = this._accZ, aw = this._accW
-    ax.fill(0); ay.fill(0); az.fill(0); aw.fill(0)
+    const nd = this._nearD
+    nd.fill(Infinity)
     for (const p of pts) {
-      const s = sectorOf(p.x - head.x, p.z - head.z)
-      ax[s] += p.x * p.w; ay[s] += p.y * p.w; az[s] += p.z * p.w
-      aw[s] += p.w
+      const dx = p.x - head.x, dz = p.z - head.z
+      const s = sectorOf(dx, dz)
+      const d2 = dx * dx + dz * dz
+      if (d2 < nd[s]) {
+        nd[s] = d2
+        this._nearX[s] = p.x; this._nearY[s] = p.y; this._nearZ[s] = p.z
+      }
     }
     for (let i = 0; i < SECTORS; i++) {
-      if (aw[i] <= 0) { this._active[i] = 0; continue }
+      if (nd[i] === Infinity) { this._active[i] = 0; continue }
       this._active[i] = 1
-      const y = head.y + (ay[i] / aw[i] - head.y) * Y_FLATTEN
-      this._set(i, ax[i] / aw[i], y, az[i] / aw[i])
+      const y = head.y + (this._nearY[i] - head.y) * Y_FLATTEN
+      this._set(i, this._nearX[i], y, this._nearZ[i])
     }
   }
 

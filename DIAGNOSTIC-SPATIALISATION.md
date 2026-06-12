@@ -131,9 +131,14 @@ Les 4 corrections sont appliquées :
 | # | Correction | Implémentation |
 |---|---|---|
 | 1 | Orientation caméra → `setListenerOrientation` | `spinToForward` (coords.js) + `RainSampler.setListenerOrientation`, câblé sur `spin` dans `DioramaApp` |
-| 2 | Voix en coordonnées monde absolues | `MaterialEmitter.update` : moyenne pondérée des impacts par secteur, sans décalage `head` |
+| 2 | Voix en coordonnées monde absolues | `MaterialEmitter.update` : impact le plus proche par secteur, sans décalage `head` |
 | 3 | Hauteur des sources | `Y_FLATTEN` : composante verticale tête→voix écrasée (provisoire jusqu'au relief, phase 5) |
-| 4 | Secteurs angulaires pondérés | 8 voix-secteurs par matériau, remplacement du centroïde + arc |
+| 4 | Secteurs angulaires | 8 voix-secteurs par matériau, remplacement du centroïde + arc |
+
+> **Note (placement intra-secteur)** : chaque voix-secteur se pose sur l'impact le **plus proche**
+> de la tête dans son secteur, pas sur le centroïde du secteur. Le centroïde d'une grande zone se
+> déporte au loin (surface ∝ r²), et l'atténuation de distance éteint alors les gouttes proches
+> (« presque rien au milieu »). Le plus proche préserve la goutte proche, forte — conforme à §9.
 
 > ⚠️ L'exemple de code de la Cause 1 ci-dessus a un signe inversé : la caméra étant en
 > `(+sin spin, ·, +cos spin)` et regardant l'origine ([WireframeCube.jsx:285-289](ds/ui_kits/diorama/WireframeCube.jsx#L285-L289)),
