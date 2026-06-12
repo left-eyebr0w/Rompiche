@@ -130,7 +130,7 @@ Les 4 corrections sont appliquées :
 
 | # | Correction | Implémentation |
 |---|---|---|
-| 1 | Orientation caméra → `setListenerOrientation` | `spinToForward` (coords.js) + `RainSampler.setListenerOrientation`, câblé sur `spin` dans `DioramaApp` |
+| 1 | ~~Orientation caméra → `setListenerOrientation`~~ **REVERTÉE** (voir révision ci-dessous) | Orientation auditeur FIXE : `LISTENER_FORWARD` (coords.js), posée une fois dans `RainSampler.init` ; plus de câblage sur `spin` |
 | 2 | Voix en coordonnées monde absolues | `MaterialEmitter.update` : impact le plus proche par secteur, sans décalage `head` |
 | 3 | Hauteur des sources | `Y_FLATTEN` : composante verticale tête→voix écrasée (provisoire jusqu'au relief, phase 5) |
 | 4 | Secteurs angulaires | 8 voix-secteurs par matériau, remplacement du centroïde + arc |
@@ -142,8 +142,34 @@ Les 4 corrections sont appliquées :
 
 > ⚠️ L'exemple de code de la Cause 1 ci-dessus a un signe inversé : la caméra étant en
 > `(+sin spin, ·, +cos spin)` et regardant l'origine ([WireframeCube.jsx:285-289](ds/ui_kits/diorama/WireframeCube.jsx#L285-L289)),
-> l'avant monde est `(−sin, 0, −cos)`. C'est la formule de `spinToForward` (coords.js) qui fait foi.
+> l'avant monde était `(−sin, 0, −cos)`. (Conservé pour mémoire — voir révision ci-dessous.)
 
 ---
 
-*Rédigé le 2026-06-12 · référence de code : commit `0969860`*
+## Révision (2026-06-12) — la correction 1 est annulée : orientation auditeur FIXE
+
+La correction 1 partait du postulat « écran-gauche = audio-gauche » : faire suivre au champ
+sonore l'orbite caméra (`spin`). À l'usage, ce postulat est **faux** pour ce diorama.
+
+`spin` est une **orbite de la vue** autour de la scène, pas une rotation de la tête de
+l'auditeur. La tête (position `head`) est l'**input de référence et reste fixe** ; orbiter la
+caméra ne fait que changer le point de vue, comme tourner autour d'une maquette posée sur une
+table — sans que les oreilles ne tournent. Faire pivoter `setListenerOrientation` avec `spin`
+faisait donc tourner tout le champ sonore à chaque orbite : les gouttes changeaient de côté
+alors que rien ne bougeait dans le monde.
+
+**Décision** : l'orientation de l'auditeur est désormais **fixe**, ancrée au monde
+(avant = −Z, haut = +Y), posée une seule fois à l'init. Le gauche/droite/devant audio
+correspond aux directions du monde, indépendamment de l'angle de vue.
+
+| Avant (correction 1) | Après (révision) |
+|---|---|
+| `spinToForward(spin)` → `setListenerOrientation` à chaque changement de `spin` | `LISTENER_FORWARD` constant, posé une fois dans `RainSampler.init` |
+| Champ sonore tourne avec l'orbite caméra | Champ sonore ancré au monde, stable |
+
+> Si un jour un vrai contrôle « tourner la tête » est ajouté (distinct de l'orbite caméra),
+> c'est *lui* — et non `spin` — qui devra piloter `setListenerOrientation`.
+
+---
+
+*Rédigé le 2026-06-12 · référence de code : commit `0969860` · révisé le 2026-06-12*

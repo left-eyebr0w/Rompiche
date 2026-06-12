@@ -38,14 +38,9 @@ export function worldToResonance({ x, y, z }) {
   return [x, y, z]
 }
 
-/* Azimut caméra (spin, degrés) → vecteur AVANT monde de l'auditeur.
-   L'auditeur écoute depuis la tête mais s'oriente comme la caméra : le
-   gauche/droite audio suit la vue orbitée (correction 1 du diagnostic).
-   Dérivé de la position caméra de WireframeCube — dist·(sin spin, ·, cos spin)
-   regardant l'origine — donc avant horizontal = (−sin, 0, −cos). Le tilt
-   vertical est ignoré : l'auditeur reste droit (up = +Y), pour ne pas basculer
-   tout le champ sonore avec la plongée de la caméra. */
-export function spinToForward(spinDeg) {
-  const a = (spinDeg * Math.PI) / 180
-  return { x: -Math.sin(a), y: 0, z: -Math.cos(a) }
-}
+/* Orientation FIXE de l'auditeur (avant monde, normalisé). La tête est l'input
+   de référence et ne tourne PAS avec l'orbite caméra (spin) : orbiter la vue
+   change le point de vue, pas l'écoute. Le champ sonore reste donc stable —
+   gauche/droite/devant sont ancrés au monde, pas à l'écran.
+   Avant = −Z monde (convention Resonance par défaut), haut = +Y. */
+export const LISTENER_FORWARD = { x: 0, y: 0, z: -1 }

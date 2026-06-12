@@ -1,6 +1,6 @@
 import { ResonanceAudio } from 'resonance-audio'
 import { MATERIALS } from './materials.js'
-import { makeCoords, headInputToWorld, worldToResonance, spinToForward } from './coords.js'
+import { makeCoords, headInputToWorld, worldToResonance, LISTENER_FORWARD } from './coords.js'
 
 const COOLDOWN_MS = 80   // anti-mitraillage PAR CELLULE (0,5 m) — §13.4
 const WINDOW_MS   = 400  // fenêtre glissante du réservoir — §13.3
@@ -212,6 +212,11 @@ export class RainSampler {
     masterGain.gain.value = 3
     this.scene.output.connect(masterGain).connect(this.ctx.destination)
 
+    /* Orientation de l'auditeur posée UNE fois et FIXE : la tête est l'input de
+       référence, elle ne tourne pas avec l'orbite caméra (spin). Le champ sonore
+       reste ancré au monde — orbiter la vue change le point de vue, pas l'écoute. */
+    this.scene.setListenerOrientation(...worldToResonance(LISTENER_FORWARD), 0, 1, 0)
+
     /* Tap de mesure sur la sortie master — niveau RÉEL post-atténuation (le seul
        qui reflète ce qu'on entend, contrairement aux analysers par voix qui sont
        en amont du pipeline Resonance). */
@@ -276,15 +281,6 @@ export class RainSampler {
     const world = headInputToWorld({ x: nx, y: ny, z: nz }, this.limit)
     this._headWorld = world
     this.scene.setListenerPosition(...worldToResonance(world))
-  }
-
-  /* Azimut caméra (spin, degrés) → orientation de l'auditeur (correction 1).
-     L'auditeur écoute depuis la tête mais s'oriente comme la caméra : le
-     gauche/droite audio suit la vue orbitée. */
-  setListenerOrientation(spinDeg) {
-    if (!this.scene) return
-    const fwd = spinToForward(spinDeg)
-    this.scene.setListenerOrientation(...worldToResonance(fwd), 0, 1, 0)
   }
 
   trigger(surface, { x = 0, z = 0, gainDb = 0, detune = 0 } = {}) {

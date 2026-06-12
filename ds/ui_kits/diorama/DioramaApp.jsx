@@ -72,18 +72,16 @@ export default function DioramaApp() {
   gainRef.current  = state.gain
   const headRef    = React.useRef({ x: state.x, y: state.y, z: state.z })
   headRef.current  = { x: state.x, y: state.y, z: state.z }
-  const spinRef    = React.useRef(state.spin)
-  spinRef.current  = state.spin
 
   const initSampler = React.useCallback(async () => {
     if (samplerRef.current) { samplerRef.current.resume(); return }
     const s = new RainSampler(SIZE)
     await s.init()
     samplerRef.current = s
-    /* Positionne et oriente l'auditeur dès l'init — les useEffect ci-dessous tournent trop tôt (avant async) */
+    /* Positionne l'auditeur dès l'init — le useEffect ci-dessous tourne trop tôt (avant async).
+       L'orientation est fixe (posée dans RainSampler.init) : elle ne suit pas l'orbite caméra. */
     const h = headRef.current
     s.setListenerPosition(h.x, h.y, h.z)
-    s.setListenerOrientation(spinRef.current)
   }, [])
 
   React.useEffect(() => {
@@ -106,11 +104,9 @@ export default function DioramaApp() {
     samplerRef.current?.setListenerPosition(state.x, state.y, state.z)
   }, [state.x, state.y, state.z])
 
-  /* Synchronise l'orientation de l'auditeur avec l'orbite caméra : orbiter la
-     vue tourne aussi le champ sonore (le gauche/droite audio suit l'écran) */
-  React.useEffect(() => {
-    samplerRef.current?.setListenerOrientation(state.spin)
-  }, [state.spin])
+  /* L'orientation de l'auditeur est FIXE (posée à l'init) : orbiter la vue
+     (spin) déplace le point de vue, pas l'écoute. La tête est l'input de
+     référence et reste fixe → le champ sonore reste ancré au monde. */
 
   /* drag orbit — Y axis only */
   const drag = React.useRef({ active: false, lastX: 0 })
