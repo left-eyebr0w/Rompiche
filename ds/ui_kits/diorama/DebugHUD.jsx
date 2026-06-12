@@ -75,6 +75,7 @@ export default function DebugHUD({ samplerRef, head, size }) {
 
   const [meters, setMeters] = React.useState([])
   const [master, setMaster] = React.useState(-Infinity)
+  const [pool, setPool] = React.useState({ busy: 0, size: 0, steals: 0 })
   const [hitIds, setHitIds] = React.useState({})
   const prevCounts = React.useRef({})
 
@@ -89,6 +90,7 @@ export default function DebugHUD({ samplerRef, head, size }) {
       const m = s.materialMeters()
       setMeters(m)
       setMaster(s.getMasterLevel())
+      setPool(s.poolStats())
       const hits = {}
       let any = false
       for (const e of m) {
@@ -154,7 +156,13 @@ export default function DebugHUD({ samplerRef, head, size }) {
         </section>
 
         <section className="dbg__sec">
-          <div className="dbg__sech">Émetteurs · 1 par matériau · 8 voix-secteurs</div>
+          <div className="dbg__sech">
+            Pool · {pool.busy}/{pool.size} voix · {pool.steals} vol{pool.steals > 1 ? 's' : ''}
+          </div>
+        </section>
+
+        <section className="dbg__sec">
+          <div className="dbg__sech">Matériaux · pool de voix partagé</div>
           <div className="dbg__zones">
             {meters.map((m) => (
               <div key={m.id} className={'dbg__zone' + (hitIds[m.id] ? ' hit' : '')}>

@@ -366,8 +366,9 @@ Chaque phase est jouable et testable seule ; aucune ne casse la précédente.
 
 ## 12. Invariants & garde-fous
 
-- **Le nombre d'émetteurs ne dépend QUE du nombre de matériaux.** Toute idée « une source par
-  cellule/région » est un signal d'alerte.
+- **Le nombre de voix spatialisées est un BUDGET FIXE** (`POOL_SIZE`, indépendant du terrain,
+  de la pluie ET du nombre de matériaux — pool partagé). Toute idée « une source par
+  cellule/région » reste un signal d'alerte.
 - **Un seul repère monde**, conversion Resonance isolée en un point (piège du Z).
 - **Tout est piloté par les impacts** : le coût suit la pluie, pas le terrain.
 - **Chaque phase reproduit la précédente à l'identique avant d'ajouter** (la phase 1 doit sonner
@@ -379,11 +380,13 @@ Chaque phase est jouable et testable seule ; aucune ne casse la précédente.
 
 1. **Échelle & finesse** ✅ — `BLOCK = 1 m`, `CELL = 0,5 m`, cube tête = 1 m (cf. §4.1). Le matériau
    se peint au 0,5 m, plus fin que les blocs (qui pourront contenir des objets).
-2. **`K` voix par matériau** ✅ — ~~3 pour démarrer~~ → **8 voix-secteurs** depuis le
-   2026-06-12 : une voix par secteur d'azimut autour de la tête, placée sur la moyenne pondérée
-   des impacts du secteur en coordonnées monde (correction 4 de
-   [DIAGNOSTIC-SPATIALISATION.md](DIAGNOSTIC-SPATIALISATION.md)). L'arc « centroïde + spread »
-   de §9 est remplacé par cette répartition.
+2. **Voix spatialisées** ✅ — ~~3 voix par matériau~~ → ~~8 voix-secteurs~~ → **pool partagé de
+   24 voix possédées par les grains** depuis le 2026-06-12 : chaque grain acquiert une voix,
+   est joué depuis la position monde de SON impact (posée une seule fois), puis libère la voix
+   à la fin du sample. Plus de placement différé ni de sources partagées mobiles — le
+   télescopage spatial des grains disparaît, l'enveloppement émerge goutte par goutte
+   (révision 2 de [DIAGNOSTIC-SPATIALISATION.md](DIAGNOSTIC-SPATIALISATION.md)). Vol de voix
+   avec fondu 5 ms si le pool est épuisé.
 3. **Fenêtre du réservoir** ✅ — décroissance des impacts sur **~300–500 ms** (règle l'inertie du
    niveau et du spread).
 4. **Cooldown** ✅ — **anti-mitraillage par cellule** (0,5 m), pas par matériau. Remplace le cooldown

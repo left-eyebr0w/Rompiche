@@ -130,15 +130,14 @@ Les 4 corrections sont appliquées :
 
 | # | Correction | Implémentation |
 |---|---|---|
-| 1 | ~~Orientation caméra → `setListenerOrientation`~~ **REVERTÉE** (voir révision ci-dessous) | Orientation auditeur FIXE : `LISTENER_FORWARD` (coords.js), posée une fois dans `RainSampler.init` ; plus de câblage sur `spin` |
-| 2 | Voix en coordonnées monde absolues | `MaterialEmitter.update` : impact le plus proche par secteur, sans décalage `head` |
-| 3 | Hauteur des sources | `Y_FLATTEN` : composante verticale tête→voix écrasée (provisoire jusqu'au relief, phase 5) |
-| 4 | Secteurs angulaires | 8 voix-secteurs par matériau, remplacement du centroïde + arc |
+| 1 | ~~Orientation caméra → `setListenerOrientation`~~ **REVERTÉE** (voir révision 1) | Orientation auditeur FIXE : `LISTENER_FORWARD` (coords.js), posée une fois dans `RainSampler.init` ; plus de câblage sur `spin` |
+| 2 | Voix en coordonnées monde absolues | Chaque grain est joué depuis la position monde de SON impact (pool de voix, révision 2) |
+| 3 | Hauteur des sources | `Y_FLATTEN` : composante verticale tête→grain écrasée, figée au déclenchement (provisoire jusqu'au relief, phase 5) |
+| 4 | ~~Secteurs angulaires~~ **REMPLACÉE** (voir révision 2) | Pool de voix possédées par les grains : l'enveloppement émerge de la géométrie réelle, goutte par goutte |
 
-> **Note (placement intra-secteur)** : chaque voix-secteur se pose sur l'impact le **plus proche**
-> de la tête dans son secteur, pas sur le centroïde du secteur. Le centroïde d'une grande zone se
-> déporte au loin (surface ∝ r²), et l'atténuation de distance éteint alors les gouttes proches
-> (« presque rien au milieu »). Le plus proche préserve la goutte proche, forte — conforme à §9.
+> ~~**Note (placement intra-secteur)** : chaque voix-secteur se pose sur l'impact le plus proche
+> de la tête dans son secteur…~~ — obsolète depuis la révision 2 : il n'y a plus de secteurs ni
+> de placement différé, chaque grain porte sa propre position.
 
 > ⚠️ L'exemple de code de la Cause 1 ci-dessus a un signe inversé : la caméra étant en
 > `(+sin spin, ·, +cos spin)` et regardant l'origine ([WireframeCube.jsx:285-289](ds/ui_kits/diorama/WireframeCube.jsx#L285-L289)),
@@ -146,7 +145,7 @@ Les 4 corrections sont appliquées :
 
 ---
 
-## Révision (2026-06-12) — la correction 1 est annulée : orientation auditeur FIXE
+## Révision 1 (2026-06-12) — la correction 1 est annulée : orientation auditeur FIXE
 
 La correction 1 partait du postulat « écran-gauche = audio-gauche » : faire suivre au champ
 sonore l'orbite caméra (`spin`). À l'usage, ce postulat est **faux** pour ce diorama.
@@ -172,4 +171,48 @@ correspond aux directions du monde, indépendamment de l'angle de vue.
 
 ---
 
-*Rédigé le 2026-06-12 · référence de code : commit `0969860` · révisé le 2026-06-12*
+## Révision 2 (2026-06-12) — télescopage des grains : pool de voix possédées par les grains
+
+### Le bug (« les sons s'interrompent les uns les autres »)
+
+Le modèle voix-secteurs faisait partager **une seule source Resonance mobile** à tous les grains
+d'un même secteur (8 par matériau). Deux mécanismes cassaient les grains en cours :
+
+1. **La boucle `update()` (60 Hz)** replaçait chaque voix-secteur sur l'impact le plus proche de
+   la fenêtre de 400 ms : dès qu'une goutte plus proche arrivait (ou que l'ancienne sortait de la
+   fenêtre), la source **sautait** ailleurs — traînant avec elle les grains encore en train de
+   résonner (un sample de pluie dure 100-300 ms). `setPosition` sans lissage à chaque frame
+   → zipper, clics, sensation de coupure.
+2. **`triggerGrain` recalait** la voix d'un secteur réactivé sur le nouvel impact, emportant la
+   traîne du grain précédent.
+
+Un grain ne possédait jamais sa position : le grain suivant la déplaçait sous lui.
+
+### Le correctif : `VoicePool`
+
+`POOL_SIZE` (24) sources Resonance pré-créées à l'init, partagées entre matériaux, jamais
+créées/détruites ensuite (zéro churn de nœuds). Cycle de vie d'un grain :
+
+```
+acquire → setPosition sur l'impact (UNE fois) → grain joue → onended → release
+```
+
+- **La position d'une voix ne bouge jamais pendant qu'un grain y joue** — chaque goutte sonne
+  d'où elle est tombée, jusqu'au bout. Les deux mécanismes ci-dessus disparaissent à la racine.
+- **Dimensionnement** : concurrence ≈ débit × durée de grain (~50 imp/s × 0,2 s ≈ 10 voix en
+  moyenne, pics ~2×) → 24 voix absorbent quasiment tout. Même budget que l'ancien modèle
+  (3 matériaux × 8 secteurs = 24 sources permanentes).
+- **Vol de voix** (pool épuisé, rare) : la voix la plus ancienne est réaffectée après un fondu
+  de 5 ms (`STEAL_FADE_S`) — inaudible, jamais de clic. Le compteur de vols est affiché dans le
+  DebugHUD : s'il grimpe, le pool est sous-dimensionné pour le débit.
+- **Supprimés** : `MaterialEmitter`, les secteurs, la boucle `_startLoop`/`update` de
+  repositionnement. Le réservoir ne garde que les timestamps (débit du DebugHUD).
+- **Conservés** : cooldown par cellule (80 ms, limiteur de débit), `Y_FLATTEN` (appliqué au
+  déclenchement), distances d'atténuation par matériau (posées à l'acquisition de la voix via
+  `setMinDistance`/`setMaxDistance`).
+- **Mobile** : réduire `POOL_SIZE` (12-16) et `AMBISONIC_ORDER` (1-2) — deux constantes en tête
+  de `RainSampler.js`.
+
+---
+
+*Rédigé le 2026-06-12 · référence de code : commit `0969860` · révisé le 2026-06-12 (×2)*
