@@ -154,7 +154,7 @@ export default function DebugHUD({ samplerRef, head, size }) {
         </section>
 
         <section className="dbg__sec">
-          <div className="dbg__sech">Émetteurs · 1 par matériau · 3 voix</div>
+          <div className="dbg__sech">Émetteurs · 1 par matériau · 8 voix-secteurs</div>
           <div className="dbg__zones">
             {meters.map((m) => (
               <div key={m.id} className={'dbg__zone' + (hitIds[m.id] ? ' hit' : '')}>

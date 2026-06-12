@@ -124,4 +124,21 @@ ordre. La correction 4 est un refactor plus profond de `MaterialEmitter.update`.
 
 ---
 
+## Statut des corrections (2026-06-12)
+
+Les 4 corrections sont appliquées :
+
+| # | Correction | Implémentation |
+|---|---|---|
+| 1 | Orientation caméra → `setListenerOrientation` | `spinToForward` (coords.js) + `RainSampler.setListenerOrientation`, câblé sur `spin` dans `DioramaApp` |
+| 2 | Voix en coordonnées monde absolues | `MaterialEmitter.update` : moyenne pondérée des impacts par secteur, sans décalage `head` |
+| 3 | Hauteur des sources | `Y_FLATTEN` : composante verticale tête→voix écrasée (provisoire jusqu'au relief, phase 5) |
+| 4 | Secteurs angulaires pondérés | 8 voix-secteurs par matériau, remplacement du centroïde + arc |
+
+> ⚠️ L'exemple de code de la Cause 1 ci-dessus a un signe inversé : la caméra étant en
+> `(+sin spin, ·, +cos spin)` et regardant l'origine ([WireframeCube.jsx:285-289](ds/ui_kits/diorama/WireframeCube.jsx#L285-L289)),
+> l'avant monde est `(−sin, 0, −cos)`. C'est la formule de `spinToForward` (coords.js) qui fait foi.
+
+---
+
 *Rédigé le 2026-06-12 · référence de code : commit `0969860`*

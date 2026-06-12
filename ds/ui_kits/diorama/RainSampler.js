@@ -1,10 +1,24 @@
 import { ResonanceAudio } from 'resonance-audio'
 import { MATERIALS } from './materials.js'
-import { makeCoords, headInputToWorld, worldToResonance } from './coords.js'
+import { makeCoords, headInputToWorld, worldToResonance, spinToForward } from './coords.js'
 
 const COOLDOWN_MS = 80   // anti-mitraillage PAR CELLULE (0,5 m) — §13.4
 const WINDOW_MS   = 400  // fenêtre glissante du réservoir — §13.3
-const VOICES      = 3    // K voix Resonance par matériau — §13.2
+const SECTORS     = 8    /* voix Resonance par matériau : UNE par secteur d'azimut
+  autour de la tête (correction 4 du diagnostic — remplace les K=3 voix sur arc).
+  Coût toujours borné par le nombre de matériaux : 3 × 8 = 24 sources. */
+const Y_FLATTEN   = 0.25 /* écrasement de la composante verticale tête→voix : les
+  impacts sont au sol et l'auditeur au-dessus, et un angle d'élévation trop piqué
+  écrase les indices gauche/droite HRTF (correction 3). Provisoire : le relief
+  (phase 5) apportera de vraies hauteurs d'impact. À calibrer à l'oreille. */
+
+/* Azimut (dx, dz) autour de la tête → indice de secteur [0, SECTORS-1].
+   atan2 ∈ [−π, +π] ; +π retombe dans le secteur 0 (même direction que −π). */
+function sectorOf(dx, dz) {
+  const a = Math.atan2(dz, dx)
+  const s = Math.floor(((a + Math.PI) / (2 * Math.PI)) * SECTORS)
+  return s >= SECTORS ? 0 : s
+}
 
 /* ── Couche 2 · réservoir d'impacts (anneau + fenêtre glissante) — §7 ────────
    Anneau des N derniers impacts {x,y,z,t}. Encode OÙ et à quelle CADENCE un
@@ -46,10 +60,11 @@ class ImpactReservoir {
 }
 
 /* ── Couche 3 · émetteur multi-position par matériau — §9 ────────────────────
-   UN émetteur (K voix Resonance) par matériau. À chaque frame, depuis le nuage
-   d'impacts récents et la tête : direction (voix proche), distance (atténuation
-   réelle), spread (envergure angulaire). Les grains sont routés vers la voix la
-   plus proche de leur point de chute. */
+   UN émetteur par matériau, SECTORS voix Resonance : une par secteur d'azimut
+   autour de la tête. Chaque voix se place sur la moyenne pondérée des positions
+   MONDE des impacts récents de son secteur ; les grains sont routés vers la voix
+   de leur secteur. Direction, distance et enveloppement émergent de la géométrie
+   réelle — plus de centroïde angulaire (qui s'annulait au milieu d'une zone). */
 class MaterialEmitter {
   constructor(scene, ctx, material, coords) {
     this.material = material
@@ -58,10 +73,17 @@ class MaterialEmitter {
     this._buf = new Float32Array(256)
     const { METER, ground } = coords
 
+    /* Accumulateurs par secteur, réutilisés chaque frame (zéro allocation) */
+    this._accX = new Float64Array(SECTORS)
+    this._accY = new Float64Array(SECTORS)
+    this._accZ = new Float64Array(SECTORS)
+    this._accW = new Float64Array(SECTORS)
+    this._active = new Uint8Array(SECTORS) // secteur replacé au dernier update
+
     this.voices = []
     this.analysers = []
     this._pos = []
-    for (let i = 0; i < VOICES; i++) {
+    for (let i = 0; i < SECTORS; i++) {
       /* Atténuation RÉELLE (logarithmique ≈ exponentielle perçue) en distances
          métriques : min 0,5 m (≈ CELL), max 4 m (≈ la pièce). Fini le minDistance
          géant qui désactivait l'atténuation. */
@@ -82,42 +104,29 @@ class MaterialEmitter {
     }
   }
 
-  /* Replace les K voix depuis le nuage d'impacts récents + la tête (monde).
-     - Direction d'ensemble = CENTROÏDE ANGULAIRE (résultante des azimuts) : le
-       « plus proche » donnerait le bord intérieur d'une grande zone, près du
-       centre, et tuerait le gauche/droite. Le plus proche ne sert qu'à la distance.
-     - On raisonne en rayon HORIZONTAL (plan XZ) en gardant la hauteur réelle des
-       impacts, pour ne pas compter deux fois la chute verticale jusqu'au sol. */
+  /* Replace les voix depuis le nuage d'impacts récents + la tête (monde).
+     Répartition par SECTEURS ANGULAIRES pondérés (correction 4) : chaque voix
+     prend la moyenne pondérée des positions MONDE des impacts de son secteur.
+     - Zone qui entoure l'auditeur → tous les secteurs actifs → enveloppement
+       réel, là où le centroïde angulaire s'annulait (« son de nulle part »).
+     - Patch localisé → 1-2 secteurs actifs → son pointé, distance réelle.
+     - Positions en monde absolu (plus d'ancrage sur head.x/z, correction 2) :
+       se déplacer change l'azimut ET la distance perçus, Resonance fait le reste.
+     Un secteur sans impact est marqué inactif (sa voix garde sa position mais le
+     prochain grain la recalera, cf. triggerGrain). */
   update(pts, head) {
-    if (!pts.length) return
-
-    let nd = Infinity
-    let sumY = 0, sumRH = 0, sumW = 0
-    let mx = 0, mz = 0 // résultante des azimuts → direction + concentration
+    const ax = this._accX, ay = this._accY, az = this._accZ, aw = this._accW
+    ax.fill(0); ay.fill(0); az.fill(0); aw.fill(0)
     for (const p of pts) {
-      const dx = p.x - head.x, dy = p.y - head.y, dz = p.z - head.z
-      const d2 = dx * dx + dy * dy + dz * dz
-      if (d2 < nd) nd = d2
-      const az = Math.atan2(dz, dx)
-      mx += Math.cos(az); mz += Math.sin(az)
-      sumY += p.y * p.w
-      sumRH += Math.hypot(dx, dz) * p.w
-      sumW += p.w
+      const s = sectorOf(p.x - head.x, p.z - head.z)
+      ax[s] += p.x * p.w; ay[s] += p.y * p.w; az[s] += p.z * p.w
+      aw[s] += p.w
     }
-    const R = Math.hypot(mx, mz) / pts.length // concentration angulaire [0,1]
-    const meanAz = Math.atan2(mz, mx)         // direction d'ensemble
-    const spread = Math.PI * (1 - R)          // envergure : étroit si concentré, large si on est dessus
-    const meanY = sumW > 0 ? sumY / sumW : head.y
-    const meanRH = Math.max(
-      sumW > 0 ? sumRH / sumW : Math.sqrt(nd),
-      this.coords.CELL, // évite un rayon nul quand on est pile sur la zone
-    )
-
-    // K voix réparties sur l'arc [meanAz − spread/2, meanAz + spread/2]
-    for (let i = 0; i < VOICES; i++) {
-      const frac = VOICES > 1 ? (i / (VOICES - 1)) - 0.5 : 0 // [-0.5, 0.5]
-      const az = meanAz + frac * spread
-      this._set(i, head.x + Math.cos(az) * meanRH, meanY, head.z + Math.sin(az) * meanRH)
+    for (let i = 0; i < SECTORS; i++) {
+      if (aw[i] <= 0) { this._active[i] = 0; continue }
+      this._active[i] = 1
+      const y = head.y + (ay[i] / aw[i] - head.y) * Y_FLATTEN
+      this._set(i, ax[i] / aw[i], y, az[i] / aw[i])
     }
   }
 
@@ -127,15 +136,15 @@ class MaterialEmitter {
     this.voices[i].setPosition(...worldToResonance(p))
   }
 
-  /* Joue un grain via la voix dont la position courante est la plus proche du
-     point de chute → le grain part de la bonne direction. */
-  triggerGrain(ctx, buf, gainDb, detune, pos) {
-    let vi = 0, best = Infinity
-    for (let i = 0; i < VOICES; i++) {
-      const p = this._pos[i]
-      const dx = p.x - pos.x, dz = p.z - pos.z
-      const d = dx * dx + dz * dz
-      if (d < best) { best = d; vi = i }
+  /* Joue un grain via la voix du SECTEUR du point de chute → le grain part de
+     la bonne direction. Si le secteur était inactif (pas replacé au dernier
+     update), la voix est d'abord recalée sur l'impact lui-même : la reprise
+     après accalmie part de la bonne position, jamais d'une position périmée. */
+  triggerGrain(ctx, buf, gainDb, detune, pos, head) {
+    const vi = sectorOf(pos.x - head.x, pos.z - head.z)
+    if (!this._active[vi]) {
+      this._active[vi] = 1
+      this._set(vi, pos.x, head.y + (pos.y - head.y) * Y_FLATTEN, pos.z)
     }
     const src = ctx.createBufferSource()
     src.buffer = buf
@@ -260,6 +269,15 @@ export class RainSampler {
     this.scene.setListenerPosition(...worldToResonance(world))
   }
 
+  /* Azimut caméra (spin, degrés) → orientation de l'auditeur (correction 1).
+     L'auditeur écoute depuis la tête mais s'oriente comme la caméra : le
+     gauche/droite audio suit la vue orbitée. */
+  setListenerOrientation(spinDeg) {
+    if (!this.scene) return
+    const fwd = spinToForward(spinDeg)
+    this.scene.setListenerOrientation(...worldToResonance(fwd), 0, 1, 0)
+  }
+
   trigger(surface, { x = 0, z = 0, gainDb = 0, detune = 0 } = {}) {
     if (!this.ready || this.ctx.state === 'suspended') return
     const bank = this.banks[surface]
@@ -277,7 +295,7 @@ export class RainSampler {
     const pos = { x, y: this.coords.ground, z }
     this.reservoirs.get(surface).add(pos.x, pos.y, pos.z, now)
     const buf = bank[Math.floor(Math.random() * bank.length)]
-    emitter.triggerGrain(this.ctx, buf, gainDb, detune, pos)
+    emitter.triggerGrain(this.ctx, buf, gainDb, detune, pos, this._headWorld)
   }
 
   /* État par matériau pour le DebugHUD (niveaux mesurés + positions des voix). */

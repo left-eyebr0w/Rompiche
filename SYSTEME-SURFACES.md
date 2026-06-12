@@ -379,7 +379,11 @@ Chaque phase est jouable et testable seule ; aucune ne casse la précédente.
 
 1. **Échelle & finesse** ✅ — `BLOCK = 1 m`, `CELL = 0,5 m`, cube tête = 1 m (cf. §4.1). Le matériau
    se peint au 0,5 m, plus fin que les blocs (qui pourront contenir des objets).
-2. **`K` voix par matériau** ✅ — **3** pour démarrer.
+2. **`K` voix par matériau** ✅ — ~~3 pour démarrer~~ → **8 voix-secteurs** depuis le
+   2026-06-12 : une voix par secteur d'azimut autour de la tête, placée sur la moyenne pondérée
+   des impacts du secteur en coordonnées monde (correction 4 de
+   [DIAGNOSTIC-SPATIALISATION.md](DIAGNOSTIC-SPATIALISATION.md)). L'arc « centroïde + spread »
+   de §9 est remplacé par cette répartition.
 3. **Fenêtre du réservoir** ✅ — décroissance des impacts sur **~300–500 ms** (règle l'inertie du
    niveau et du spread).
 4. **Cooldown** ✅ — **anti-mitraillage par cellule** (0,5 m), pas par matériau. Remplace le cooldown
