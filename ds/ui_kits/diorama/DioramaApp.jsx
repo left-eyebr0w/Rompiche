@@ -192,6 +192,7 @@ export default function DioramaApp() {
           density={state.density} wind={state.wind}
           windTilt={state.windTilt} windRotation={state.windRotation} windForce={state.windForce}
           onImpact={state.listening && state.rain ? handleImpact : null}
+          samplerRef={samplerRef} debug={state.debug}
         />
         <div className="dio__scrim" />
         <div className="dio__top">

@@ -101,15 +101,21 @@ void main() {
 
 const RAIN_POOL = 80
 
+/* Couleurs de l'overlay debug des voix (une par matériau) — palette dédiée au
+   diagnostic, volontairement distincte du monochrome de la scène. */
+const VOICE_COLORS = { metal: 0xe8c96d, bache: 0x7ec8e3, terre: 0x9ae87a }
+
 export default function WireframeCube({
   size = 360, terrain = null, head = { x: 0, y: 0, z: 0 },
   rain = true, metal = true, bache = true, listening = false,
   spin = -32, zoom = 1, density = 0.5, wind = false, windTilt = 0.5, windRotation = 0, windForce = 0.5,
   onImpact = null,
+  samplerRef = null, debug = false,
 }) {
   const canvasRef   = useRef(null)
   const threeRef    = useRef(null)
   const impactState = useRef({ metal, bache, onImpact, terrain })
+  const debugState  = useRef({ debug, samplerRef })
 
   const half = size / 2
   const dropCount = rain ? Math.round(12 + density * (RAIN_POOL - 12)) : 0
@@ -202,6 +208,33 @@ export default function WireframeCube({
     const rainPoints = new THREE.Points(rainGeo, rainMat)
     scene.add(rainPoints)
 
+    /* ── Overlay 3D debug des voix audio ────────────────────────────────────
+       Un marqueur par voix ACTIVE du pool, à sa position MONDE réelle — celle
+       que Resonance entend (donc Y_FLATTEN visible : les losanges flottent
+       au-dessus du sol, le pied les ancre sur l'impact). Couleur = matériau,
+       taille + opacité = niveau RMS du grain. Togglé avec le mode debug. */
+    const voiceGroup = new THREE.Group()
+    voiceGroup.visible = false
+    scene.add(voiceGroup)
+    const voiceGeo = new THREE.EdgesGeometry(new THREE.OctahedronGeometry(8))
+    const stemGeo  = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, -1, 0), // unitaire, scale.y = hauteur
+    ])
+    const voiceMarkers = [] // créés paresseusement jusqu'à la taille du pool
+    function makeVoiceMarker() {
+      const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 })
+      const group = new THREE.Group()
+      const diamond = new THREE.LineSegments(voiceGeo, mat)
+      const stem = new THREE.Line(stemGeo, mat)
+      group.add(diamond)
+      group.add(stem)
+      group.visible = false
+      voiceGroup.add(group)
+      const mk = { group, diamond, stem, mat }
+      voiceMarkers.push(mk)
+      return mk
+    }
+
     /* Resize observer */
     const ro = new ResizeObserver(() => {
       const el = canvas.parentElement
@@ -251,6 +284,28 @@ export default function WireframeCube({
         }
       }
 
+      /* Overlay debug : reflète l'état du pool de voix à chaque frame */
+      const { debug: dbg, samplerRef: sref } = debugState.current
+      const sampler = sref?.current
+      voiceGroup.visible = !!(dbg && sampler?.ready)
+      if (voiceGroup.visible) {
+        const voices = sampler.debugVoices()
+        while (voiceMarkers.length < voices.length) makeVoiceMarker()
+        for (let i = 0; i < voiceMarkers.length; i++) {
+          const mk = voiceMarkers[i]
+          const v = voices[i]
+          if (!v?.busy) { mk.group.visible = false; continue }
+          mk.group.visible = true
+          mk.group.position.set(v.x, v.y, v.z)
+          /* niveau RMS [−50, −5] dB → présence [0, 1] */
+          const lin = isFinite(v.level) ? Math.min(1, Math.max(0, (v.level + 50) / 45)) : 0
+          mk.diamond.scale.setScalar(0.5 + 1.3 * lin)
+          mk.mat.opacity = 0.2 + 0.7 * lin
+          mk.mat.color.setHex(VOICE_COLORS[v.materialId] ?? 0xffffff)
+          mk.stem.scale.y = v.y + half // pied jusqu'au sol (y = −half)
+        }
+      }
+
       renderer.render(scene, camera)
     }
     animate()
@@ -272,6 +327,7 @@ export default function WireframeCube({
 
   /* Keep impactState ref in sync with latest props (no re-render needed) */
   impactState.current = { metal, bache, onImpact, terrain }
+  debugState.current  = { debug, samplerRef }
 
   /* ── Sync props → Three.js objects ─────────────────────── */
 

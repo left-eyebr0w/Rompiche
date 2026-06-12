@@ -20,10 +20,16 @@ const sampleUrls = {
   ),
 }
 
+/* maxDistance : au-delà, Resonance coupe NET à zéro (gain = 0, cf.
+   attenuation.js). Le monde fait ~3,8 m de côté soit ~5,4 m en diagonale :
+   avec l'ancien 4 m, une tête excentrée rendait toute une bande de pluie
+   muette (trous rythmiques + niveau global en berne, masqué tant que les
+   grains étaient joués depuis l'impact le plus proche du secteur). 8 m
+   couvre la diagonale avec de la marge et adoucit la pente. À calibrer. */
 export const MATERIALS = [
-  { id: 'metal', label: 'Métal', urls: sampleUrls.metal, gain: 1, minDistance: 0.5, maxDistance: 4 },
-  { id: 'bache', label: 'Bâche', urls: sampleUrls.bache, gain: 1, minDistance: 0.5, maxDistance: 4 },
-  { id: 'terre', label: 'Terre', urls: sampleUrls.terre, gain: 1, minDistance: 0.5, maxDistance: 4 },
+  { id: 'metal', label: 'Métal', urls: sampleUrls.metal, gain: 1, minDistance: 0.5, maxDistance: 8 },
+  { id: 'bache', label: 'Bâche', urls: sampleUrls.bache, gain: 1, minDistance: 0.5, maxDistance: 8 },
+  { id: 'terre', label: 'Terre', urls: sampleUrls.terre, gain: 1, minDistance: 0.5, maxDistance: 8 },
 ]
 
 /* id → indice dans MATERIALS (pour les Uint8Array du terrain) */

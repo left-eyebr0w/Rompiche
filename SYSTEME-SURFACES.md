@@ -381,7 +381,7 @@ Chaque phase est jouable et testable seule ; aucune ne casse la précédente.
 1. **Échelle & finesse** ✅ — `BLOCK = 1 m`, `CELL = 0,5 m`, cube tête = 1 m (cf. §4.1). Le matériau
    se peint au 0,5 m, plus fin que les blocs (qui pourront contenir des objets).
 2. **Voix spatialisées** ✅ — ~~3 voix par matériau~~ → ~~8 voix-secteurs~~ → **pool partagé de
-   24 voix possédées par les grains** depuis le 2026-06-12 : chaque grain acquiert une voix,
+   48 voix possédées par les grains** depuis le 2026-06-12 : chaque grain acquiert une voix,
    est joué depuis la position monde de SON impact (posée une seule fois), puis libère la voix
    à la fin du sample. Plus de placement différé ni de sources partagées mobiles — le
    télescopage spatial des grains disparaît, l'enveloppement émerge goutte par goutte
@@ -392,7 +392,9 @@ Chaque phase est jouable et testable seule ; aucune ne casse la précédente.
 4. **Cooldown** ✅ — **anti-mitraillage par cellule** (0,5 m), pas par matériau. Remplace le cooldown
    par zone actuel ([RainSampler.js:126](ds/ui_kits/diorama/RainSampler.js#L126)).
 5. **Atténuation** ✅ — courbe **logarithmique** (≈ exponentielle perçue), `minDistance = 0,5 m`,
-   `maxDistance ≈ 4 m` (≈ la pièce), ajustables par matériau (cf. §9).
+   `maxDistance = 8 m` depuis le 2026-06-12 (~~4 m~~ : Resonance coupe NET à zéro au-delà de
+   `maxDistance`, or la diagonale du monde fait ~5,4 m — une tête excentrée rendait toute une
+   bande de pluie muette). Ajustables par matériau (cf. §9).
 6. **Gouttes-objets isolées** ✅ — **non**. On garde un *bed* pur par matériau, sans objets ponctuels
    « spotlightés ».
 

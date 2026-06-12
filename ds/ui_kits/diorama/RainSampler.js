@@ -4,11 +4,12 @@ import { makeCoords, headInputToWorld, worldToResonance, LISTENER_FORWARD } from
 
 const COOLDOWN_MS = 80   // anti-mitraillage PAR CELLULE (0,5 m) — §13.4
 const WINDOW_MS   = 400  // fenêtre glissante du réservoir (débit du DebugHUD) — §13.3
-const POOL_SIZE   = 24   /* voix Resonance pré-créées à l'init, PARTAGÉES entre
-  matériaux. Dimensionnement : concurrence ≈ débit × durée de grain
-  (~50 imp/s × 0,2 s ≈ 10 voix en moyenne, pics ~2×) → 24 absorbe quasiment
-  tout sans vol de voix. Même coût que l'ancien modèle (3 matériaux × 8
-  secteurs = 24 sources permanentes). Mobile : réduire à 12-16. */
+const POOL_SIZE   = 48   /* voix Resonance pré-créées à l'init, PARTAGÉES entre
+  matériaux. Dimensionnement : concurrence ≈ débit × durée de grain — avec des
+  queues de samples longues (300-500 ms et plus), ~50 imp/s × 0,4 s ≈ 20 voix
+  en moyenne, pics ~2× → 48. Surveiller le compteur de VOLS du DebugHUD : s'il
+  grimpe, augmenter ; s'il reste à 0 avec une occupation < 50 %, réduire. Les
+  durées réelles des banques sont loguées au chargement. Mobile : 12-16. */
 const AMBISONIC_ORDER = 3 /* ordre 3 = 16 canaux d'encodage par voix + décodeur
   binaural partagé (coût fixe). Passer à 1 ou 2 sur mobile pour alléger. */
 const STEAL_FADE_S = 0.005 /* vol de voix : fade-out de 5 ms du grain le plus
@@ -229,7 +230,12 @@ export class RainSampler {
   async _loadBank(name, urls) {
     const buffers = await Promise.all(urls.map(u => this._decode(u)))
     this.banks[name] = buffers.filter(Boolean)
-    console.log(`[RainSampler] ${name} : ${this.banks[name].length}/${urls.length} samples chargés`)
+    /* Durées loguées pour dimensionner POOL_SIZE : concurrence ≈ débit × durée. */
+    const durs = this.banks[name].map(b => b.duration)
+    const mean = durs.length ? durs.reduce((a, b) => a + b, 0) / durs.length : 0
+    const max  = durs.length ? Math.max(...durs) : 0
+    console.log(`[RainSampler] ${name} : ${this.banks[name].length}/${urls.length} samples chargés` +
+      ` · durée moy ${Math.round(mean * 1000)} ms · max ${Math.round(max * 1000)} ms`)
   }
 
   async _decode(url) {
@@ -307,6 +313,19 @@ export class RainSampler {
         voices,
       }
     })
+  }
+
+  /* Snapshot des voix pour l'overlay 3D de debug : position MONDE réelle de
+     chaque voix (celle entendue, Y_FLATTEN compris), matériau et niveau RMS.
+     N'allouer qu'en mode debug — appelé depuis la boucle de rendu. */
+  debugVoices() {
+    if (!this.pool) return []
+    return this.pool.voices.map(v => ({
+      busy: v.busy,
+      materialId: v.materialId,
+      x: v.pos.x, y: v.pos.y, z: v.pos.z,
+      level: v.busy ? this.pool.level(v) : -Infinity,
+    }))
   }
 
   /* Occupation du pool (DebugHUD) : voix actives / budget, vols cumulés.

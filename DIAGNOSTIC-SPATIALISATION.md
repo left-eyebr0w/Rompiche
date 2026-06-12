@@ -190,7 +190,7 @@ Un grain ne possédait jamais sa position : le grain suivant la déplaçait sous
 
 ### Le correctif : `VoicePool`
 
-`POOL_SIZE` (24) sources Resonance pré-créées à l'init, partagées entre matériaux, jamais
+`POOL_SIZE` sources Resonance pré-créées à l'init, partagées entre matériaux, jamais
 créées/détruites ensuite (zéro churn de nœuds). Cycle de vie d'un grain :
 
 ```
@@ -199,9 +199,10 @@ acquire → setPosition sur l'impact (UNE fois) → grain joue → onended → r
 
 - **La position d'une voix ne bouge jamais pendant qu'un grain y joue** — chaque goutte sonne
   d'où elle est tombée, jusqu'au bout. Les deux mécanismes ci-dessus disparaissent à la racine.
-- **Dimensionnement** : concurrence ≈ débit × durée de grain (~50 imp/s × 0,2 s ≈ 10 voix en
-  moyenne, pics ~2×) → 24 voix absorbent quasiment tout. Même budget que l'ancien modèle
-  (3 matériaux × 8 secteurs = 24 sources permanentes).
+- **Dimensionnement** : concurrence ≈ débit × durée de grain. `POOL_SIZE = 48` (les queues de
+  samples réelles dépassent l'estimation initiale de 0,2 s ; les durées des banques sont
+  loguées au chargement pour recalibrer). Le compteur de vols du DebugHUD est l'indicateur :
+  s'il grimpe, augmenter ; s'il reste à 0 avec une occupation < 50 %, réduire.
 - **Vol de voix** (pool épuisé, rare) : la voix la plus ancienne est réaffectée après un fondu
   de 5 ms (`STEAL_FADE_S`) — inaudible, jamais de clic. Le compteur de vols est affiché dans le
   DebugHUD : s'il grimpe, le pool est sous-dimensionné pour le débit.
@@ -212,6 +213,25 @@ acquire → setPosition sur l'impact (UNE fois) → grain joue → onended → r
   `setMinDistance`/`setMaxDistance`).
 - **Mobile** : réduire `POOL_SIZE` (12-16) et `AMBISONIC_ORDER` (1-2) — deux constantes en tête
   de `RainSampler.js`.
+
+### Calibration après écoute (même jour)
+
+Premier retour d'écoute : « tout s'entend moins bien » et gouttes encore saccadées. Deux causes
+identifiées :
+
+1. **`maxDistance = 4 m` coupait NET au silence** : la courbe `logarithmic` de Resonance
+   (attenuation.js) donne −13 dB à 2 m, −37 dB à 3,8 m et **gain = 0 au-delà de `maxDistance`**.
+   Or le monde fait ~3,8 m de côté soit **~5,4 m en diagonale** : tête excentrée, toute une bande
+   de pluie était muette (trous rythmiques = saccades, niveau global en berne). L'ancien modèle
+   masquait le défaut en jouant chaque grain depuis l'impact le plus proche du secteur — le pool
+   a révélé la vraie calibration. → `maxDistance` passe à **8 m** (materials.js).
+2. **Vol de voix potentiel** si les queues de samples sont longues → `POOL_SIZE` passe à **48**,
+   durées des banques loguées au chargement, compteur de vols au DebugHUD.
+
+**Overlay 3D de debug** (Ctrl+Alt+D) : un losange filaire par voix active, à sa position monde
+réelle — celle que Resonance entend, `Y_FLATTEN` compris (les losanges flottent, un pied les
+ancre au sol). Couleur = matériau, taille + opacité = niveau RMS du grain. Permet de *voir* le
+pool travailler : occupation, positions, extinction des grains.
 
 ---
 
