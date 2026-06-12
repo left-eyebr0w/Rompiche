@@ -1,4 +1,21 @@
-/* DioramaApp — full v0 screen: dark viewport (wireframe cube) + control HUD. */
+import React from 'react'
+import WireframeCube from './WireframeCube.jsx'
+import ControlHUD from './ControlHUD.jsx'
+import DebugHUD from './DebugHUD.jsx'
+import { RainSampler } from './RainSampler.js'
+import { makeCoords } from './coords.js'
+import { makeDefaultTerrain } from './Terrain.js'
+
+const SIZE = Math.min(420, 380)
+
+const SEGMENTS = ['aube', 'jour', 'crépuscule', 'nuit']
+function segmentFor(h) {
+  if (h >= 5 && h < 8)  return 'aube'
+  if (h >= 8 && h < 18) return 'jour'
+  if (h >= 18 && h < 21) return 'crépuscule'
+  return 'nuit'
+}
+
 const APP_CSS = `
 .dio{ position:fixed; inset:0; display:flex; background:var(--canvas-noir); font-family:var(--font-sans); }
 .dio__view{ position:relative; flex:1; min-width:0; overflow:hidden; }
@@ -23,93 +40,161 @@ const APP_CSS = `
 .dio__hint{ position:absolute; left:26px; bottom:22px; z-index:6; font-family:var(--font-mono);
   font-size:10px; letter-spacing:.06em; color:var(--on-ink-faint); line-height:1.7; }
 .dio__hint b{ color:var(--on-ink-muted); font-weight:500; }
-`;
-(function(){ if(typeof document==="undefined"||document.getElementById("dio-css"))return;
-  const s=document.createElement("style"); s.id="dio-css"; s.textContent=APP_CSS; document.head.appendChild(s); })();
+`
+;(function () {
+  if (typeof document === 'undefined' || document.getElementById('dio-css')) return
+  const s = document.createElement('style'); s.id = 'dio-css'; s.textContent = APP_CSS
+  document.head.appendChild(s)
+})()
 
-const SEGMENTS = ["aube","jour","crépuscule","nuit"];
-function segmentFor(h){ if(h>=5&&h<8)return"aube"; if(h>=8&&h<18)return"jour"; if(h>=18&&h<21)return"crépuscule"; return"nuit"; }
+export default function DioramaApp() {
+  const now = new Date()
+  const [state, setState] = React.useState({
+    rain: true, wind: false, windTilt: 0.5, windRotation: 0, windForce: 0.5, metal: true, bache: true, listening: false,
+    x: 0.18, y: 0, z: -0.30, density: 0.42, gain: -6,
+    spin: -32, zoom: 1,
+    clockMode: 'sync', clockSegment: 'jour',
+    debug: false,
+  })
+  const [time, setTime] = React.useState(now)
+  const set = (patch) => setState(s => ({ ...s, ...patch }))
 
-function DioramaApp(){
-  const now = new Date();
-  const [state,setState] = React.useState({
-    rain:true, wind:false, windDir:0.4, metal:true, earth:true, listening:false,
-    x:0.18, y:0, z:-0.30, density:0.42, gain:-6,
-    spin:-32, zoom:1,
-    clockMode:"sync", clockSegment:"jour",
-  });
-  const [time,setTime] = React.useState(now);
-  const set = (patch)=>setState(s=>({...s,...patch}));
+  /* Terrain (couche 1) — donnée éditable, reproduit la scène figée actuelle.
+     Lu par WireframeCube pour le matériau de chaque goutte (fini le `ix < 0 ?`). */
+  const terrain = React.useMemo(() => {
+    const c = makeCoords(SIZE)
+    return makeDefaultTerrain({ size: c.size, cell: c.CELL, block: c.BLOCK })
+  }, [])
 
-  // Drag orbit — axe Y uniquement
-  const drag = React.useRef({ active:false, lastX:0 });
-  const viewRef = React.useRef(null);
+  /* ── Audio sampler ──────────────────────────────────────── */
+  const samplerRef = React.useRef(null)
+  const gainRef    = React.useRef(state.gain)
+  gainRef.current  = state.gain
+  const headRef    = React.useRef({ x: state.x, y: state.y, z: state.z })
+  headRef.current  = { x: state.x, y: state.y, z: state.z }
 
-  React.useEffect(()=>{ const t=setInterval(()=>setTime(new Date()),1000); return ()=>clearInterval(t); },[]);
+  const initSampler = React.useCallback(async () => {
+    if (samplerRef.current) { samplerRef.current.resume(); return }
+    const s = new RainSampler(SIZE)
+    await s.init()
+    samplerRef.current = s
+    /* Positionne l'auditeur dès l'init — le useEffect ci-dessous tourne trop tôt (avant async) */
+    const h = headRef.current
+    s.setListenerPosition(h.x, h.y, h.z)
+  }, [])
 
-  // Fin du drag même si la souris quitte le viewport
-  React.useEffect(()=>{
-    const onUp = ()=>{ drag.current.active = false; };
-    window.addEventListener('mouseup', onUp);
-    return ()=>window.removeEventListener('mouseup', onUp);
-  },[]);
+  React.useEffect(() => {
+    if (state.listening) initSampler()
+  }, [state.listening, initSampler])
 
-  // Ctrl+molette → zoom (non-passive pour pouvoir appeler preventDefault)
-  React.useEffect(()=>{
-    const el = viewRef.current;
-    if(!el) return;
-    const onWheel = (e)=>{
-      if(!e.ctrlKey) return;
-      e.preventDefault();
-      setState(s=>({...s, zoom: Math.min(2.5, Math.max(0.4, s.zoom + (e.deltaY>0 ? -0.08 : 0.08)))}));
-    };
-    el.addEventListener('wheel', onWheel, {passive:false});
-    return ()=>el.removeEventListener('wheel', onWheel);
-  },[]);
+  const handleImpact = React.useCallback((surface, pos) => {
+    const s = samplerRef.current
+    if (!s?.ready) return
+    s.trigger(surface, {
+      x: pos?.x ?? 0,
+      z: pos?.z ?? 0,
+      gainDb: gainRef.current,
+      detune: (Math.random() - 0.5) * 40,
+    })
+  }, [])
 
-  const handleMouseDown = (e)=>{ drag.current = { active:true, lastX:e.clientX }; };
-  const handleMouseMove = (e)=>{
-    if(!drag.current.active) return;
-    const dx = e.clientX - drag.current.lastX;
-    drag.current.lastX = e.clientX;
-    setState(s=>({...s, spin: s.spin + dx * 0.5}));
-  };
-  const realClock = segmentFor(time.getHours());
-  const clock = state.clockMode==="manual" ? state.clockSegment : realClock;
-  const hhmm = time.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+  /* Synchronise la position de l'auditeur avec la tête */
+  React.useEffect(() => {
+    samplerRef.current?.setListenerPosition(state.x, state.y, state.z)
+  }, [state.x, state.y, state.z])
 
-  // a faux 6-channel level meter, animates when listening / raining
-  const [levels,setLevels] = React.useState([3,6,4,7,5,4]);
-  React.useEffect(()=>{
-    const active = state.listening;
-    const t = setInterval(()=>{
-      setLevels(prev=>prev.map((_,i)=>{
-        const base = active ? (state.rain?18:9) : 4;
-        const span = active ? (state.rain?22:12)*state.density+6 : 3;
-        return Math.max(3, Math.round(base + Math.random()*span));
-      }));
-    }, active?140:600);
-    return ()=>clearInterval(t);
-  },[state.listening,state.rain,state.density]);
+  /* drag orbit — Y axis only */
+  const drag = React.useRef({ active: false, lastX: 0 })
+  const viewRef = React.useRef(null)
 
-  const WireframeCube = window.WireframeCube;
-  const ControlHUD = window.ControlHUD;
+  React.useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  React.useEffect(() => {
+    const onUp = () => { drag.current.active = false }
+    window.addEventListener('mouseup', onUp)
+    return () => window.removeEventListener('mouseup', onUp)
+  }, [])
+
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.ctrlKey && e.altKey && e.code === 'KeyD') {
+        e.preventDefault()
+        setState(s => ({ ...s, debug: !s.debug }))
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  React.useEffect(() => {
+    const el = viewRef.current
+    if (!el) return
+    const onWheel = (e) => {
+      if (!e.ctrlKey) return
+      e.preventDefault()
+      setState(s => ({ ...s, zoom: Math.min(2.5, Math.max(0.4, s.zoom + (e.deltaY > 0 ? -0.08 : 0.08))) }))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
+  const handleMouseDown = (e) => { drag.current = { active: true, lastX: e.clientX } }
+  const handleMouseMove = (e) => {
+    if (!drag.current.active) return
+    const dx = e.clientX - drag.current.lastX
+    drag.current.lastX = e.clientX
+    setState(s => ({ ...s, spin: s.spin + dx * 0.5 }))
+  }
+
+  const realClock = segmentFor(time.getHours())
+  const clock = state.clockMode === 'manual' ? state.clockSegment : realClock
+  const hhmm = time.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+
+  const [levels, setLevels] = React.useState([3, 6, 4, 7, 5, 4])
+  React.useEffect(() => {
+    const active = state.listening
+    const t = setInterval(() => {
+      setLevels(prev => prev.map(() => {
+        const base = active ? (state.rain ? 18 : 9) : 4
+        const span = active ? (state.rain ? 22 : 12) * state.density + 6 : 3
+        return Math.max(3, Math.round(base + Math.random() * span))
+      }))
+    }, active ? 140 : 600)
+    return () => clearInterval(t)
+  }, [state.listening, state.rain, state.density])
 
   return (
     <div className="dio">
+      {state.debug && (
+        <DebugHUD
+          samplerRef={samplerRef}
+          head={{ x: state.x, y: state.y, z: state.z }}
+          size={SIZE}
+        />
+      )}
       <div className="dio__view" ref={viewRef}
            onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}>
-        <WireframeCube size={Math.min(420,380)} head={{x:state.x,y:state.y,z:state.z}}
-          rain={state.rain} metal={state.metal} earth={state.earth} listening={state.listening}
+        <WireframeCube
+          size={SIZE}
+          terrain={terrain}
+          head={{ x: state.x, y: state.y, z: state.z }}
+          rain={state.rain} metal={state.metal} bache={state.bache}
+          listening={state.listening}
           spin={state.spin} zoom={state.zoom}
-          density={state.density} wind={state.wind} windDir={state.windDir}/>
-        <div className="dio__scrim"/>
+          density={state.density} wind={state.wind}
+          windTilt={state.windTilt} windRotation={state.windRotation} windForce={state.windForce}
+          onImpact={state.listening && state.rain ? handleImpact : null}
+        />
+        <div className="dio__scrim" />
         <div className="dio__top">
           <div className="dio__brand">
             <span className="dio__glyph"><span className="dio__gcube">
-              <span className="dio__gface" style={{transform:"translateZ(9px)"}}/>
-              <span className="dio__gface" style={{transform:"rotateY(90deg) translateZ(9px)",borderColor:"var(--wire-dim)"}}/>
-              <span className="dio__gface" style={{transform:"rotateX(90deg) translateZ(9px)",borderColor:"var(--wire-dim)"}}/>
+              <span className="dio__gface" style={{ transform: 'translateZ(9px)' }} />
+              <span className="dio__gface" style={{ transform: 'rotateY(90deg) translateZ(9px)', borderColor: 'var(--wire-dim)' }} />
+              <span className="dio__gface" style={{ transform: 'rotateX(90deg) translateZ(9px)', borderColor: 'var(--wire-dim)' }} />
             </span></span>
             <div>
               <div className="dio__name">Diorama sonore</div>
@@ -117,13 +202,15 @@ function DioramaApp(){
             </div>
           </div>
           <div className="dio__topr">
-            <div className="dio__mode">horloge · {state.clockMode==="manual"?"manuel":"sync"}</div>
+            <div className="dio__mode">horloge · {state.clockMode === 'manual' ? 'manuel' : 'sync'}</div>
             <div className="dio__clock">{clock}</div>
             <div className="dio__time">{hhmm}</div>
             <div className="dio__meter">
-              {levels.map((l,i)=>(
-                <div key={i} className="dio__bar" style={{ height:Math.max(6,l)+"px",
-                  background: state.listening?"var(--wire)":"var(--wire-dim)" }}/>
+              {levels.map((l, i) => (
+                <div key={i} className="dio__bar" style={{
+                  height: Math.max(6, l) + 'px',
+                  background: state.listening ? 'var(--wire)' : 'var(--wire-dim)',
+                }} />
               ))}
             </div>
           </div>
@@ -131,10 +218,10 @@ function DioramaApp(){
         <div className="dio__hint">
           <div><b>Glisser</b> dans le viewport pour orbiter la vue</div>
           <div><b>Ctrl+molette</b> pour zoomer · <b>Axes XYZ</b> pour déplacer l'auditeur</div>
+          <div><b>Ctrl+Alt+D</b> pour afficher le panneau debug</div>
         </div>
       </div>
-      <ControlHUD state={state} set={set} segments={SEGMENTS} clock={clock} clockMode={state.clockMode}/>
+      <ControlHUD state={state} set={set} segments={SEGMENTS} clock={clock} clockMode={state.clockMode} />
     </div>
-  );
+  )
 }
-window.DioramaApp = DioramaApp;

@@ -1,5 +1,5 @@
-/* ControlHUD — the v0 "test the engine" panel. Composes DS primitives
-   (Switch, Slider, Button, Tag, Eyebrow). Presentational: state lives in App. */
+import React from 'react'
+
 const HUD_CSS = `
 .hud{ width:340px; flex:0 0 340px; height:100%; background:var(--canvas-noir);
   border-left:1px solid var(--on-ink-border); display:flex; flex-direction:column;
@@ -14,7 +14,6 @@ const HUD_CSS = `
 .hud__sech .ic{ color:var(--on-ink-muted); display:flex; }
 .hud__sech .ic svg{ width:15px; height:15px; }
 .hud__stack{ display:flex; flex-direction:column; gap:14px; }
-/* clock segments (read-only — driven by real local time) */
 .hud__clock{ display:grid; grid-template-columns:repeat(4,1fr); gap:1px;
   background:var(--on-ink-border); border:1px solid var(--on-ink-border); border-radius:var(--radius-sm); overflow:hidden; }
 .hud__seg{ background:var(--canvas-noir); padding:8px 4px; text-align:center;
@@ -31,29 +30,32 @@ const HUD_CSS = `
 .hud__foot{ padding:18px 22px; border-top:1px solid var(--on-ink-border); display:flex; flex-direction:column; gap:10px; }
 .hud__note{ font-family:var(--font-mono); font-size:10px; color:var(--on-ink-faint); letter-spacing:.04em; line-height:1.5; }
 .hud__btn-full > *{ width:100%; }
-`;
-(function(){ if(typeof document==="undefined"||document.getElementById("hud-css"))return;
-  const s=document.createElement("style"); s.id="hud-css"; s.textContent=HUD_CSS; document.head.appendChild(s); })();
+`
+;(function () {
+  if (typeof document === 'undefined' || document.getElementById('hud-css')) return
+  const s = document.createElement('style'); s.id = 'hud-css'; s.textContent = HUD_CSS
+  document.head.appendChild(s)
+})()
 
-/* Lucide icon — the substituted CDN icon set (thin monochrome line). */
-function Icon({ name, size=16 }){
-  const ref = React.useRef(null);
-  React.useEffect(()=>{
-    if(window.lucide && ref.current){
-      ref.current.innerHTML = "";
-      const el = document.createElement("i"); el.setAttribute("data-lucide", name);
-      ref.current.appendChild(el);
-      try { window.lucide.createIcons({ attrs:{ width:size, height:size, "stroke-width":1.6 } }); } catch(e){}
+function Icon({ name, size = 16 }) {
+  const ref = React.useRef(null)
+  React.useEffect(() => {
+    if (window.lucide && ref.current) {
+      ref.current.innerHTML = ''
+      const el = document.createElement('i')
+      el.setAttribute('data-lucide', name)
+      ref.current.appendChild(el)
+      try { window.lucide.createIcons({ attrs: { width: size, height: size, 'stroke-width': 1.6 } }) } catch (e) {}
     }
-  },[name,size]);
-  return <span className="ic" ref={ref} />;
+  }, [name, size])
+  return <span className="ic" ref={ref} />
 }
-window.Icon = Icon;
 
-function ControlHUD(props){
-  const DS = window.DioramaSonoreDesignSystem_6d9bc4;
-  const { Switch, Slider, Button, Tag, Eyebrow } = DS;
-  const { state, set, segments, clock, clockMode } = props;
+export default function ControlHUD(props) {
+  const DS = window.DioramaSonoreDesignSystem_6d9bc4
+  const { Switch, Slider, Button, Tag, Eyebrow } = DS
+  const { state, set, segments, clock, clockMode } = props
+
   return (
     <aside className="hud">
       <div className="hud__head">
@@ -66,84 +68,97 @@ function ControlHUD(props){
 
       <div className="hud__body">
         <section className="hud__sec">
-          <div className="hud__sech"><Icon name="cloud-rain"/><Eyebrow tone="inverse">État du monde</Eyebrow></div>
+          <div className="hud__sech"><Icon name="cloud-rain" /><Eyebrow tone="inverse">État du monde</Eyebrow></div>
           <div className="hud__stack">
             <Switch inverse label="Pluie" showState checked={state.rain}
-              onChange={e=>set({rain:e.target.checked})}/>
+              onChange={e => set({ rain: e.target.checked })} />
             <Switch inverse label="Vent" showState checked={state.wind}
-              onChange={e=>set({wind:e.target.checked})}/>
-            <Slider inverse label="Vent — direction / force" min={-1} max={1} step={0.05}
-              value={state.windDir} disabled={!state.wind}
-              formatValue={v=> v===0 ? "nul" : (v<0?"\u2190 ":"\u2192 ")+Math.abs(v).toFixed(2)}
-              onChange={e=>set({windDir:parseFloat(e.target.value)})}/>
+              onChange={e => set({ wind: e.target.checked })} />
             <div>
-              <div className="hud__note" style={{marginBottom:8}}>
-                Horloge interne · {clockMode==="manual" ? "r\u00e9glage manuel" : "synchronis\u00e9e"}
+              <div className="hud__note" style={{ marginBottom: 8 }}>
+                Horloge interne · {clockMode === 'manual' ? 'réglage manuel' : 'synchronisée'}
               </div>
               <div className="hud__clock">
-                {segments.map(s=>(
+                {segments.map(s => (
                   <button key={s} type="button"
-                    className={"hud__seg"+(s===clock?" active":"")}
-                    onClick={()=>set({clockMode:"manual", clockSegment:s})}>{s}</button>
+                    className={'hud__seg' + (s === clock ? ' active' : '')}
+                    onClick={() => set({ clockMode: 'manual', clockSegment: s })}>{s}</button>
                 ))}
               </div>
               <div className="hud__clockmode">
-                <span className={"hud__synced"+(clockMode==="sync"?" live":"")}>
-                  {clockMode==="sync" ? "synchronis\u00e9e \u00e0 l'heure locale" : "d\u00e9coupl\u00e9e de l'heure r\u00e9elle"}
+                <span className={'hud__synced' + (clockMode === 'sync' ? ' live' : '')}>
+                  {clockMode === 'sync' ? 'synchronisée à l\'heure locale' : 'découplée de l\'heure réelle'}
                 </span>
                 <Button variant="inverse-ghost" size="sm" mono
-                  iconLeft={<Icon name="refresh-cw" size={12}/>}
-                  disabled={clockMode==="sync"}
-                  onClick={()=>set({clockMode:"sync"})}>Resync</Button>
+                  iconLeft={<Icon name="refresh-cw" size={12} />}
+                  disabled={clockMode === 'sync'}
+                  onClick={() => set({ clockMode: 'sync' })}>Resync</Button>
               </div>
             </div>
           </div>
         </section>
 
         <section className="hud__sec">
-          <div className="hud__sech"><Icon name="box"/><Eyebrow tone="inverse">Éléments · surfaces</Eyebrow></div>
+          <div className="hud__sech"><Icon name="box" /><Eyebrow tone="inverse">Éléments · surfaces</Eyebrow></div>
           <div className="hud__stack">
             <Switch inverse label="Surface métal" showState checked={state.metal}
-              onChange={e=>set({metal:e.target.checked})}/>
-            <Switch inverse label="Surface terre" showState checked={state.earth}
-              onChange={e=>set({earth:e.target.checked})}/>
+              onChange={e => set({ metal: e.target.checked })} />
+            <Switch inverse label="Surface bâche" showState checked={state.bache}
+              onChange={e => set({ bache: e.target.checked })} />
           </div>
         </section>
 
         <section className="hud__sec">
-          <div className="hud__sech"><Icon name="move-3d"/><Eyebrow tone="inverse">Tête de l'auditeur</Eyebrow></div>
+          <div className="hud__sech"><Icon name="move-3d" /><Eyebrow tone="inverse">Tête de l'auditeur</Eyebrow></div>
           <div className="hud__stack">
             <Slider inverse label="Axe X — gauche / droite" min={-1} max={1} step={0.01}
-              value={state.x} formatValue={v=>v.toFixed(2)} onChange={e=>set({x:parseFloat(e.target.value)})}/>
+              value={state.x} formatValue={v => v.toFixed(2)} onChange={e => set({ x: parseFloat(e.target.value) })} />
             <Slider inverse label="Axe Y — bas / haut" min={-1} max={1} step={0.01}
-              value={state.y} formatValue={v=>v.toFixed(2)} onChange={e=>set({y:parseFloat(e.target.value)})}/>
+              value={state.y} formatValue={v => v.toFixed(2)} onChange={e => set({ y: parseFloat(e.target.value) })} />
             <Slider inverse label="Axe Z — avant / arrière" min={-1} max={1} step={0.01}
-              value={state.z} formatValue={v=>v.toFixed(2)} onChange={e=>set({z:parseFloat(e.target.value)})}/>
+              value={state.z} formatValue={v => v.toFixed(2)} onChange={e => set({ z: parseFloat(e.target.value) })} />
           </div>
         </section>
 
         <section className="hud__sec">
-          <div className="hud__sech"><Icon name="sliders-horizontal"/><Eyebrow tone="inverse">Paramètres de grains</Eyebrow></div>
+          <div className="hud__sech"><Icon name="wind" /><Eyebrow tone="inverse">Paramètres de vent</Eyebrow></div>
+          <div className="hud__stack">
+            <Slider inverse label="Inclinaison" min={0} max={1} step={0.05}
+              value={state.windTilt} disabled={!state.wind}
+              formatValue={v => v.toFixed(2)}
+              onChange={e => set({ windTilt: parseFloat(e.target.value) })} />
+            <Slider inverse label="Rotation" min={0} max={360} step={5}
+              value={state.windRotation} disabled={!state.wind}
+              formatValue={v => Math.round(v) + '°'}
+              onChange={e => set({ windRotation: parseFloat(e.target.value) })} />
+            <Slider inverse label="Force" min={0} max={1} step={0.05}
+              value={state.windForce} disabled={!state.wind}
+              formatValue={v => v.toFixed(2)}
+              onChange={e => set({ windForce: parseFloat(e.target.value) })} />
+          </div>
+        </section>
+
+        <section className="hud__sec">
+          <div className="hud__sech"><Icon name="sliders-horizontal" /><Eyebrow tone="inverse">Paramètres de pluie</Eyebrow></div>
           <div className="hud__stack">
             <Slider inverse label="Densité" min={0} max={1} step={0.01}
-              value={state.density} formatValue={v=>v.toFixed(2)} onChange={e=>set({density:parseFloat(e.target.value)})}/>
+              value={state.density} disabled={!state.rain} formatValue={v => v.toFixed(2)} onChange={e => set({ density: parseFloat(e.target.value) })} />
             <Slider inverse label="Gain" min={-24} max={0} step={0.5}
-              value={state.gain} formatValue={v=>v.toFixed(1)+" dB"} onChange={e=>set({gain:parseFloat(e.target.value)})}/>
+              value={state.gain} disabled={!state.rain} formatValue={v => v.toFixed(1) + ' dB'} onChange={e => set({ gain: parseFloat(e.target.value) })} />
           </div>
         </section>
       </div>
 
       <div className="hud__foot">
         <div className="hud__btn-full">
-          <Button variant={state.listening?"inverse-ghost":"inverse"}
-            iconLeft={<Icon name={state.listening?"pause":"play"} size={15}/>}
-            onClick={()=>set({listening:!state.listening})}>
-            {state.listening ? "Écoute en cours" : "Lancer l'écoute"}
+          <Button variant={state.listening ? 'inverse-ghost' : 'inverse'}
+            iconLeft={<Icon name={state.listening ? 'pause' : 'play'} size={15} />}
+            onClick={() => set({ listening: !state.listening })}>
+            {state.listening ? 'Écoute en cours' : 'Lancer l\'écoute'}
           </Button>
         </div>
         <div className="hud__note">Bus 6 canaux · HRTF natif · réverb. paramétrique interpolée</div>
       </div>
     </aside>
-  );
+  )
 }
-window.ControlHUD = ControlHUD;
