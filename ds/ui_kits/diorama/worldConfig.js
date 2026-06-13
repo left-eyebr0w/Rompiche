@@ -2,9 +2,24 @@
    Source unique des presets et de la résolution des frontières de couches.
    Un seul endroit pour changer l'échelle du monde (I3, I5). */
 
+/* ── Profils plateforme (§12.2, T-4.2) ── */
+export const PLATFORM_PRESETS = {
+  mobile:  { voicesL1: 14, sectorsL2: 4,  ambisonicOrder: 1, sampleRate: 48000 },
+  desktop: { voicesL1: 40, sectorsL2: 8,  ambisonicOrder: 2, sampleRate: 48000 },
+  vr:      { voicesL1: 64, sectorsL2: 12, ambisonicOrder: 3, sampleRate: 48000 },
+}
+
+/** Détecte la plateforme courante (UA + XRSystem). */
+export function detectPlatform() {
+  if (typeof navigator === 'undefined') return 'desktop'
+  if ('xr' in navigator) return 'vr'
+  const ua = navigator.userAgent ?? ''
+  if (/Mobi|Android|iPhone|iPad/i.test(ua)) return 'mobile'
+  return 'desktop'
+}
+
 const COMMON = {
   L1: {
-    voices: 48,
     priorité: { w_gain: 0.40, w_dist: 0.40, w_att: 0.15, w_age: 0.10 },
     seuilWeakDb: -45,
   },
@@ -19,24 +34,38 @@ export const PRESETS = {
   field:     { size: 80, L1rMax: 6,   L2rMax: 35,   sectors: 12, crossfade: 0.15 },
 }
 
-export function makeWorldConfig({ preset = 'diorama', seed = 1 } = {}) {
-  const p = PRESETS[preset] ?? PRESETS.diorama
+/**
+ * Crée un WorldConfig complet.
+ * @param {object} opts
+ * @param {string} [opts.preset='diorama']
+ * @param {number} [opts.seed=1]
+ * @param {string} [opts.platform] — 'mobile'|'desktop'|'vr' (auto-détecté si absent)
+ */
+export function makeWorldConfig({ preset = 'diorama', seed = 1, platform } = {}) {
+  const p  = PRESETS[preset] ?? PRESETS.diorama
+  const pl = PLATFORM_PRESETS[platform ?? detectPlatform()]
+
+  /* Le secteur count est le min de ce que le preset monde autorise et de la plateforme */
+  const sectors = Math.min(p.sectors, pl.sectorsL2)
+
   return {
     size: p.size,
     preset,
     seed,
+    platform: platform ?? detectPlatform(),
+    ambisonicOrder: pl.ambisonicOrder,
     layers: {
-      L1: { ...COMMON.L1, rMax: p.L1rMax },
-      L2: { ...COMMON.L2, rMax: p.L2rMax, sectors: p.sectors },
+      L1: { ...COMMON.L1, voices: pl.voicesL1, rMax: p.L1rMax },
+      L2: { ...COMMON.L2, rMax: p.L2rMax, sectors },
       L3: { ...COMMON.L3 },
       crossfade: p.crossfade,
-      hystérésis: 1, // réservé Phase 3
+      hystérésis: 1,
     },
     weather: { intensité: 0.5, vent: 0, dir: 0 },
   }
 }
 
-/* Résolution des frontières r1/r2 et détection du mode collapse (§4.1-4.2). */
+/** Résolution des frontières r1/r2 et détection du mode collapse (§4.1-4.2). */
 export function résoudreCouches(worldRadius, cfg) {
   const r1 = Math.min(cfg.layers.L1.rMax, worldRadius)
   const r2 = cfg.layers.L2.rMax == null

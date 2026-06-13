@@ -8,6 +8,7 @@ import { DiffuseBed, resolveBedConfig } from './DiffuseBed.js'
 import { SectorField } from './SectorField.js'
 import { LodController, FONDU_S } from './LodController.js'
 import { resolveLodParams } from './lod.js'
+import { makeRing, ORD } from './ringBuffer.js'
 
 const COOLDOWN_MS = 80   // anti-mitraillage PAR CELLULE (0,5 m) — §13.4
 const WINDOW_MS   = 400  // fenêtre glissante du réservoir (débit du DebugHUD) — §13.3
@@ -129,12 +130,24 @@ class VoicePool {
     })
   }
 
+  /* T-4.7 — Attention : 1 si la voix est dans le champ avant de la tête, 0.4 sinon.
+     Concentre le budget sur les sources audibles en face de l'oreille. */
+  static _attention(vPos, head) {
+    const dx = vPos.x - head.x, dz = vPos.z - head.z
+    const l  = Math.hypot(dx, dz)
+    if (l < 1e-6) return 1
+    /* LISTENER_FORWARD = {0,0,-1} : le demi-espace avant est z < 0 côté auditeur */
+    const dot = (dx * 0 + dz * (-1)) / l  // dot avec forward (0,0,-1) dans plan XZ
+    return dot > 0 ? 1 : 0.4              // devant → 1, derrière → 0.4 (calibrable)
+  }
+
   /* Priorité d'une voix (§5.3). Plus la priorité est haute, moins on vole cette voix. */
   _priority(v, head, w, r2) {
     const gainNorm = Math.min(1, Math.max(0, (v.gainDb + 60) / 60))
     const distNorm = Math.min(1, v.dist / (r2 || 1))
     const âgeNorm  = Math.min(1, (performance.now() - v.startedAt) / 1000)
-    return w.w_gain * gainNorm + w.w_dist * (1 - distNorm) + w.w_att * 1 - w.w_age * âgeNorm
+    const attention = VoicePool._attention(v.pos, head)
+    return w.w_gain * gainNorm + w.w_dist * (1 - distNorm) + w.w_att * attention - w.w_age * âgeNorm
   }
 
   /* Vol par priorité minimale (remplace _oldest). */
@@ -209,6 +222,10 @@ export class RainSampler {
     /* Accumulateurs Poisson par matériau (intervalle restant avant prochain impact) */
     this._poissonAcc = Object.fromEntries(MATERIALS.map(m => [m.id, 0]))
     this._poissonNext = Object.fromEntries(MATERIALS.map(m => [m.id, 0]))
+    /* T-4.1 — Ring buffer SPSC (transitoire : game thread = audio thread) */
+    this._ring = makeRing(1024)
+    /* T-4.5 — Compteurs audio→game publiés à 30 Hz */
+    this._counters = { busy: 0, steals: 0, niveauMaster: -Infinity, sectorsActive: 0 }
   }
 
   setTerrain(terrain) {
@@ -323,16 +340,18 @@ export class RainSampler {
     return true
   }
 
-  /* T-3.5 — Levier de budget : ajuste r1 sous pression pool. */
+  /* T-3.5 / T-4.9 — Levier de budget : ajuste r1 sous pression. Consomme les compteurs audio→game. */
   ajusterBudget(rec) {
     if (!this.pool || !this._lodParams) return
-    const stats = this.poolStats()
-    const p     = this._lodParams
+    const stats = this._counters       // T-4.5 — compteurs publiés à 30 Hz
+    if (!stats.busy && stats.busy !== 0) return // pas encore initialisés
+    const p = this._lodParams
     let r1Adj   = p.r1
 
-    if (stats.busy >= p.busyHi * stats.size) {
+    const poolSize = this.cfg.layers.L1.voices
+    if (stats.busy >= p.busyHi * poolSize) {
       r1Adj = Math.max(p.r1Min, p.r1 - p.pas)
-    } else if (stats.busy < p.busyLo * stats.size) {
+    } else if (stats.busy < p.busyLo * poolSize) {
       r1Adj = Math.min(p.r1Max, p.r1 + p.pas)
     }
 
@@ -343,9 +362,9 @@ export class RainSampler {
 
     rec?.emit('budget', {
       busyL1:        stats.busy,
-      sizeL1:        stats.size,
+      sizeL1:        poolSize,
       steals:        stats.steals,
-      sectorsActive: this.sectors?.N ?? 0,
+      sectorsActive: stats.sectorsActive,
       r1Adj:         +r1Adj.toFixed(2),
     })
   }
@@ -548,7 +567,9 @@ export class RainSampler {
   }
 
   traceSample(rec) {
-    if (!rec?.recording || !this.pool) return
+    if (!this.pool) return
+    this._publishCounters() // T-4.5 — toujours mis à jour, pas seulement en enregistrement
+    if (!rec?.recording) return
     const head = this._headWorld
     const faceSum = new Array(HEAD_FACES.length).fill(0)
     const seuilWeakDb = this.cfg.layers.L1.seuilWeakDb
@@ -557,6 +578,21 @@ export class RainSampler {
       const db = this.pool.level(v)
       if (!isFinite(db)) continue
       const weak = db < seuilWeakDb
+
+      /* T-4.6 — Coupe les grains négligeables : rend la voix au budget. */
+      if (weak) {
+        rec.emit('env', {
+          grain: v.grainId, impact: v.impactId, voice: v.index, mat: v.materialId,
+          db: +db.toFixed(2),
+          x: Math.round(v.pos.x), y: Math.round(v.pos.y), z: Math.round(v.pos.z),
+          weak: true,
+        })
+        this._lod?.untrack(v.grainId)
+        this.pool._cut(v)
+        this.pool._release(v)
+        continue
+      }
+
       rec.emit('env', {
         grain: v.grainId, impact: v.impactId, voice: v.index, mat: v.materialId,
         db: +db.toFixed(2),
@@ -626,6 +662,20 @@ export class RainSampler {
     for (const v of this.pool.voices) if (v.busy) busy++
     return { busy, size: this.cfg.layers.L1.voices, steals: this.pool.stealCount }
   }
+
+  /* T-4.5 — Publie les compteurs audio→game à 30 Hz (appelé depuis traceSample). */
+  _publishCounters() {
+    if (!this.pool) return
+    let busy = 0
+    for (const v of this.pool.voices) if (v.busy) busy++
+    this._counters.busy          = busy
+    this._counters.steals        = this.pool.stealCount
+    this._counters.niveauMaster  = this.getMasterLevel()
+    this._counters.sectorsActive = this.sectors?.N ?? 0
+  }
+
+  /** Lecture des compteurs courants (pour LodController / ajusterBudget). */
+  getCounters() { return this._counters }
 
   getMasterLevel() {
     const a = this._masterAnalyser
