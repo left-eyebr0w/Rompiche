@@ -203,6 +203,22 @@ export default function DioramaApp() {
     return () => cancelAnimationFrame(rafId)
   }, [recording])
 
+  /* T-2.5 — Boucle update secteurs ~30 Hz (1 frame/2). Tourne dès que l'écoute est active. */
+  React.useEffect(() => {
+    let frame = 0, rafId
+    const loop = () => {
+      rafId = requestAnimationFrame(loop)
+      if (++frame % 2 !== 0) return
+      const s = samplerRef.current
+      if (!s?.ready || !stateRef.current.listening) return
+      const st = stateRef.current
+      /* Terrain actuel (ref synchrone) pour les calculs d'occlusion */
+      s.sectors?.update(terrainRef.current, s._headWorld, recRef.current)
+    }
+    rafId = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(rafId)
+  }, [])
+
   /* Boucle Poisson (game thread) : pilote les impacts audio indépendamment du visuel.
      La pluie sonne même si le viewport est masqué (découplage audio/visuel T-0.H1). */
   React.useEffect(() => {

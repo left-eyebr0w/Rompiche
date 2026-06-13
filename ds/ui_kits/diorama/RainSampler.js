@@ -5,6 +5,7 @@ import { makePrng } from './prng.js'
 import { makeWorldConfig, résoudreCouches } from './worldConfig.js'
 import { bakeImpactPoints, pickImpact } from './BakedSet.js'
 import { DiffuseBed, resolveBedConfig } from './DiffuseBed.js'
+import { SectorField } from './SectorField.js'
 
 const COOLDOWN_MS = 80   // anti-mitraillage PAR CELLULE (0,5 m) — §13.4
 const WINDOW_MS   = 400  // fenêtre glissante du réservoir (débit du DebugHUD) — §13.3
@@ -217,14 +218,17 @@ export class RainSampler {
   async init() {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)()
 
-    /* T-1.3 — Charger le worklet avant la scène (fallback silencieux sur erreur) */
+    /* T-1.3 / T-2.1 — Charger les worklets avant la scène (fallback silencieux) */
     try {
       await this.ctx.audioWorklet.addModule(
         new URL('./worklets/noise-processor.js', import.meta.url)
       )
+      await this.ctx.audioWorklet.addModule(
+        new URL('./worklets/granulator-processor.js', import.meta.url)
+      )
       this._workletReady = true
     } catch (e) {
-      console.warn('[RainSampler] worklet noise non chargé — nappe désactivée', e)
+      console.warn('[RainSampler] worklet non chargé — couches 2/3 désactivées', e)
       this._workletReady = false
       this.recorder?.emit('reject', { reason: 'no-worklet' })
     }
@@ -265,6 +269,15 @@ export class RainSampler {
       const bedCfg = resolveBedConfig(this.cfg, this.bands)
       this.bed = new DiffuseBed(this.ctx, masterGain, bedCfg, this.prng)
       this.bed.attachWorklet(bedCfg.noise)
+    }
+
+    /* T-2.3 — Instancier le champ de secteurs */
+    if (this._workletReady) {
+      this.sectors = new SectorField(
+        this.ctx, this.scene, this.cfg, this.bands,
+        this.prng.fork ? this.prng.fork() : this.prng,
+        this.banks,
+      )
     }
 
     this.ready = true
@@ -423,6 +436,19 @@ export class RainSampler {
     this.reservoirs.get(surface).add(now)
     this.triggerCounts.set(surface, this.triggerCounts.get(surface) + 1)
 
+    /* T-2.4 — Routage par distance : Couche 1 < r1−overlap, Couche 2 r1..r2 */
+    const dist = Math.hypot(pos.x - head.x, pos.y - head.y, pos.z - head.z)
+    const { r1, r2, overlap } = this.bands
+
+    if (this.sectors?.actif && dist >= r1 - overlap) {
+      /* Impact lointain → alimente le débit du secteur (pas de voix héros) */
+      if (dist < r2) {
+        this.sectors.absorberImpact(pos, surface, head)
+      }
+      /* Au-delà de r2 : la nappe (Couche 3) porte la masse — rien à router */
+      return
+    }
+
     /* Sample : soit pré-sélectionné par tickPoisson, soit fallback seedé */
     let buf = _buf, idx = _idx
     if (!buf) {
@@ -442,7 +468,6 @@ export class RainSampler {
 
     const w = this.cfg.layers.L1.priorité
     const seuilWeakDb = this.cfg.layers.L1.seuilWeakDb
-    const r2 = this.bands.r2
     this.pool.play(buf, gainDb, detune, pos, material, now, { rec, grainId, impactId }, head, w, seuilWeakDb, r2)
   }
 
