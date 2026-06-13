@@ -164,8 +164,8 @@ export default function WireframeCube({
     scene.add(headEdges)
 
     /* Listener dot */
-    const headDotGeo = new THREE.SphereGeometry(6.5, 10, 10)
-    const headDotMat = new THREE.MeshBasicMaterial({ color: C.blanc })
+    const headDotGeo = new THREE.SphereGeometry(2, 8, 8)
+    const headDotMat = new THREE.MeshBasicMaterial({ color: C.blanc, transparent: true, opacity: 0.5 })
     const headDot    = new THREE.Mesh(headDotGeo, headDotMat)
     scene.add(headDot)
 
@@ -178,8 +178,8 @@ export default function WireframeCube({
       [0, HCH, 0], [0, -HCH, 0],
     ]
     faceOffsets.forEach(([fx, fy, fz], i) => {
-      const g = new THREE.SphereGeometry(i === 0 ? 3.5 : 3, 8, 8)
-      const m = new THREE.MeshBasicMaterial({ color: i === 0 ? C.blanc : C.wireDim })
+      const g = new THREE.SphereGeometry(i === 0 ? 1.5 : 1.2, 6, 6)
+      const m = new THREE.MeshBasicMaterial({ color: i === 0 ? C.blanc : C.wireDim, transparent: true, opacity: 0.4 })
       const mesh = new THREE.Mesh(g, m)
       mesh.position.set(fx, fy, fz)
       headEdges.add(mesh)
