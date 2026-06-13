@@ -324,7 +324,7 @@ export default function DioramaApp() {
         <DebugHUD
           samplerRef={samplerRef}
           head={{ x: state.x, y: state.y, z: state.z }}
-          size={SIZE}
+          size={worldCfg.size}
           recording={recording}
           traceCount={traceCount}
           onToggleRecord={toggleRecording}
@@ -334,7 +334,7 @@ export default function DioramaApp() {
       <div className="dio__view" ref={viewRef}
            onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}>
         <WireframeCube
-          size={SIZE}
+          size={worldCfg.size}
           terrain={terrain}
           head={{ x: state.x, y: state.y, z: state.z }}
           rain={state.rain} metal={state.metal} bache={state.bache}
