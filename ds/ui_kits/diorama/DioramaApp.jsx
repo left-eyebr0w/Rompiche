@@ -6,8 +6,7 @@ import { RainSampler } from './RainSampler.js'
 import { TraceRecorder } from './TraceRecorder.js'
 import { makeCoords } from './coords.js'
 import { makeDefaultTerrain } from './Terrain.js'
-
-const SIZE = Math.min(420, 380)
+import { makeWorldConfig } from './worldConfig.js'
 
 const SEGMENTS = ['aube', 'jour', 'crépuscule', 'nuit']
 function segmentFor(h) {
@@ -56,16 +55,22 @@ export default function DioramaApp() {
     spin: -32, zoom: 1,
     clockMode: 'sync', clockSegment: 'jour',
     debug: false,
+    preset: 'diorama', seed: 1,
   })
   const [time, setTime] = React.useState(now)
   const set = (patch) => setState(s => ({ ...s, ...patch }))
 
-  /* Terrain (couche 1) — donnée éditable, reproduit la scène figée actuelle.
-     Lu par WireframeCube pour le matériau de chaque goutte (fini le `ix < 0 ?`). */
+  /* WorldConfig dérivé du preset/seed courant — reconstruit si preset ou seed change */
+  const worldCfg = React.useMemo(
+    () => makeWorldConfig({ preset: state.preset ?? 'diorama', seed: state.seed ?? 1 }),
+    [state.preset, state.seed],
+  )
+
+  /* Terrain (couche 1) — recalculé avec la taille du worldCfg */
   const terrain = React.useMemo(() => {
-    const c = makeCoords(SIZE)
+    const c = makeCoords(worldCfg.size)
     return makeDefaultTerrain({ size: c.size, cell: c.CELL, block: c.BLOCK })
-  }, [])
+  }, [worldCfg.size])
 
   /* ── Audio sampler ──────────────────────────────────────── */
   const samplerRef = React.useRef(null)
@@ -75,6 +80,11 @@ export default function DioramaApp() {
   headRef.current  = { x: state.x, y: state.y, z: state.z }
   const stateRef   = React.useRef(state)
   stateRef.current = state
+  /* Refs synchrones pour le initSampler callback (qui n'a pas accès aux valeurs fraîches) */
+  const worldCfgRef = React.useRef(worldCfg)
+  worldCfgRef.current = worldCfg
+  const terrainRef  = React.useRef(terrain)
+  terrainRef.current = terrain
 
   /* ── Boîte noire (traçage causal) ─────────────────────────
      Recorder persistant, branché au sampler dès l'init. Inerte tant qu'on
@@ -86,12 +96,12 @@ export default function DioramaApp() {
 
   const initSampler = React.useCallback(async () => {
     if (samplerRef.current) { samplerRef.current.resume(); return }
-    const s = new RainSampler(SIZE)
+    const cfg = worldCfgRef.current
+    const s = new RainSampler(cfg)
+    s.setTerrain(terrainRef.current)
     await s.init()
     s.setRecorder(recRef.current)
     samplerRef.current = s
-    /* Positionne l'auditeur dès l'init — le useEffect ci-dessous tourne trop tôt (avant async).
-       L'orientation est fixe (posée dans RainSampler.init) : elle ne suit pas l'orbite caméra. */
     const h = headRef.current
     s.setListenerPosition(h.x, h.y, h.z)
   }, [])
@@ -100,27 +110,10 @@ export default function DioramaApp() {
     if (state.listening) initSampler()
   }, [state.listening, initSampler])
 
-  const handleImpact = React.useCallback((surface, pos) => {
-    const s = samplerRef.current
-    if (!s?.ready) return
-    /* Maillon racine de la chaîne causale : on frappe l'id ICI (au plus près de
-       la cause physique) et on le propage au trigger, qui le porte jusqu'à la
-       voix et l'enveloppe. `impact` = 0 quand on n'enregistre pas (coût nul). */
-    const rec = recRef.current
-    const impactId = rec.recording ? rec.nextImpactId() : 0
-    if (impactId) {
-      rec.emit('impact', {
-        impact: impactId, surface,
-        x: Math.round(pos?.x ?? 0), z: Math.round(pos?.z ?? 0),
-      })
-    }
-    s.trigger(surface, {
-      x: pos?.x ?? 0,
-      z: pos?.z ?? 0,
-      gainDb: gainRef.current,
-      detune: (Math.random() - 0.5) * 40,
-      impactId,
-    })
+  /* Callback visuel uniquement — plus de déclenchement audio ici (T-0.H1).
+     L'audio est piloté par tickPoisson dans la boucle RAF dédiée. */
+  const handleImpact = React.useCallback((_surface, _pos) => {
+    // réservé : flash visuel futur
   }, [])
 
   /* Synchronise la position de l'auditeur avec la tête */
@@ -136,7 +129,7 @@ export default function DioramaApp() {
      Champs d'état suivis en delta (journalisés au changement, jamais dupliqués
      sur chaque goutte). Le snapshot initial à l'ouverture pose la version 1. */
   const TRACKED = ['rain', 'wind', 'windTilt', 'windRotation', 'windForce',
-    'metal', 'bache', 'x', 'y', 'z', 'density', 'gain']
+    'metal', 'bache', 'x', 'y', 'z', 'density', 'gain', 'preset', 'seed']
   const snapshot = (st) => Object.fromEntries(TRACKED.map(k => [k, st[k]]))
   const trackedRef = React.useRef(null)
 
@@ -151,7 +144,8 @@ export default function DioramaApp() {
       return
     }
     if (!s?.ready) return // pas d'écoute active → rien à tracer
-    rec.start(s.ctx, { size: SIZE })
+    const st = stateRef.current
+    rec.start(s.ctx, { size: worldCfgRef.current.size, seed: st.seed ?? 1, engine: 'rompiche/0.1' })
     const snap = snapshot(stateRef.current)
     rec.state(snap)              // version 1 = état complet du monde
     trackedRef.current = snap    // amorce le diff des deltas
@@ -194,6 +188,28 @@ export default function DioramaApp() {
     rafId = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(rafId)
   }, [recording])
+
+  /* Boucle Poisson (game thread) : pilote les impacts audio indépendamment du visuel.
+     La pluie sonne même si le viewport est masqué (découplage audio/visuel T-0.H1). */
+  React.useEffect(() => {
+    let rafId, lastTime = performance.now()
+    const loop = (now) => {
+      rafId = requestAnimationFrame(loop)
+      const dtMs = now - lastTime
+      lastTime = now
+      const s = samplerRef.current
+      const st = stateRef.current
+      if (!s?.ready || !st.listening || !st.rain) return
+      const surfaceDensities = {
+        metal: st.metal ? 1 : 0,
+        bache: st.bache ? 1 : 0,
+        terre: 1,
+      }
+      s.tickPoisson(dtMs, surfaceDensities, st.density)
+    }
+    rafId = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(rafId)
+  }, [])
 
   /* drag orbit — Y axis only */
   const drag = React.useRef({ active: false, lastX: 0 })

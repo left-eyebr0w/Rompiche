@@ -20,6 +20,7 @@ export function makeCoords(size) {
     METER,
     BLOCK: METER,
     CELL: METER / 2,
+    worldRadius: half,         // rayon du monde en unités-monde (I5 — résoudreCouches)
   }
 }
 

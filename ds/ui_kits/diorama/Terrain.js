@@ -66,5 +66,15 @@ export class Terrain {
 export function makeDefaultTerrain({ size, cell, block }) {
   const terrain = new Terrain({ size, cell, block })
   terrain.fill((cx) => (cx < 0 ? 'metal' : 'bache'))
+  /* Relief de test (T-0.D1) : bloc surélevé à 2 m dans le quadrant x<0, z<0.
+     Prouve que la face HAUT reçoit de l'énergie (impact au-dessus du sol). */
+  const half = size / 2
+  for (let br = 0; br < terrain.brows; br++) {
+    for (let bc = 0; bc < terrain.bcols; bc++) {
+      const cx = (bc + 0.5) * block - half
+      const cz = (br + 0.5) * block - half
+      if (cx < 0 && cz < 0) terrain.height[br * terrain.bcols + bc] = 2
+    }
+  }
   return terrain
 }

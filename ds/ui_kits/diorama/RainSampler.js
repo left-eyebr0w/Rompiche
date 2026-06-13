@@ -1,29 +1,18 @@
 import { ResonanceAudio } from 'resonance-audio'
 import { MATERIALS, materialById } from './materials.js'
 import { makeCoords, headInputToWorld, worldToResonance, LISTENER_FORWARD, HEAD_FACES } from './coords.js'
+import { makePrng } from './prng.js'
+import { makeWorldConfig, résoudreCouches } from './worldConfig.js'
+import { bakeImpactPoints, pickImpact } from './BakedSet.js'
 
 const COOLDOWN_MS = 80   // anti-mitraillage PAR CELLULE (0,5 m) — §13.4
 const WINDOW_MS   = 400  // fenêtre glissante du réservoir (débit du DebugHUD) — §13.3
-const POOL_SIZE   = 48   /* voix Resonance pré-créées à l'init, PARTAGÉES entre
-  matériaux. Dimensionnement : concurrence ≈ débit × durée de grain — avec des
-  queues de samples longues (300-500 ms et plus), ~50 imp/s × 0,4 s ≈ 20 voix
-  en moyenne, pics ~2× → 48. Surveiller le compteur de VOLS du DebugHUD : s'il
-  grimpe, augmenter ; s'il reste à 0 avec une occupation < 50 %, réduire. Les
-  durées réelles des banques sont loguées au chargement. Mobile : 12-16. */
-const AMBISONIC_ORDER = 3 /* ordre 3 = 16 canaux d'encodage par voix + décodeur
-  binaural partagé (coût fixe). Passer à 1 ou 2 sur mobile pour alléger. */
-const STEAL_FADE_S = 0.005 /* vol de voix : fade-out de 5 ms du grain le plus
-  ancien avant réaffectation — inaudible, jamais de clic (standard sampler). */
-const Y_FLATTEN   = 0.25 /* écrasement de la composante verticale tête→grain :
-  les impacts sont au sol et l'auditeur au-dessus, et un angle d'élévation trop
-  piqué écrase les indices gauche/droite HRTF (correction 3). Appliqué au
-  DÉCLENCHEMENT (la position d'un grain ne bouge plus ensuite). Provisoire :
-  le relief (phase 5) apportera de vraies hauteurs d'impact. */
+const STEAL_FADE_S = 0.005 /* vol de voix : fade-out de 5 ms — inaudible, jamais de clic. */
 
-/* ── Réservoir de cadence par matériau ───────────────────────────────────────
-   Anneau des timestamps des derniers impacts : expose le débit (impacts/s)
-   pour le DebugHUD. Les positions n'y vivent plus : chaque grain porte la
-   sienne (cf. VoicePool), il n'y a plus de placement différé à la frame. */
+/* Facteur de débit Poisson par matériau — calibrable */
+const MAT_FACTOR = { metal: 1, bache: 1, terre: 1 }
+
+/* ── Réservoir de cadence par matériau ───────────────────────────────────────*/
 class ImpactReservoir {
   constructor(capacity = 64) {
     this.cap = capacity
@@ -31,32 +20,19 @@ class ImpactReservoir {
     this.head = 0
     this.count = 0
   }
-
   add(t) {
     this.t[this.head] = t
     this.head = (this.head + 1) % this.cap
     if (this.count < this.cap) this.count++
   }
-
   rate(now, window) {
     let n = 0
     for (let k = 0; k < this.count; k++) if (now - this.t[k] <= window) n++
-    return n / (window / 1000) // impacts/s
+    return n / (window / 1000)
   }
 }
 
-/* ── Pool de voix spatialisées — le grain POSSÈDE sa position ────────────────
-   POOL_SIZE sources Resonance créées UNE fois à l'init, jamais détruites
-   ensuite (zéro churn de nœuds, zéro pression GC côté audio). Cycle de vie :
-
-     acquire → setPosition sur l'impact (UNE seule fois) → grain joue
-             → onended → release.
-
-   La position d'une voix ne bouge JAMAIS pendant qu'un grain y joue : fini
-   les voix-secteurs partagées que update() téléportait sous les grains en
-   cours (télescopage spatial, cf. révision 2 du DIAGNOSTIC). Direction,
-   distance et enveloppement émergent de la géométrie réelle, goutte par
-   goutte — chaque grain sonne d'où il est tombé, jusqu'au bout. */
+/* ── Pool de voix spatialisées ───────────────────────────────────────────────*/
 class Voice {
   constructor(scene, ctx, index) {
     this.index = index
@@ -67,22 +43,24 @@ class Voice {
     this.analyser.connect(this.src.input)
     this.pos = { x: 0, y: 0, z: 0 }
     this.materialId = null
-    this.grainSrc = null   // BufferSource en cours (pour le vol de voix)
-    this.grainGain = null  // gain du grain en cours (pour le fade de vol)
+    this.grainSrc = null
+    this.grainGain = null
     this.startedAt = 0
     this.busy = false
-    this.grainId = 0       // id du grain en cours (traçage causal)
-    this.impactId = 0      // id de l'impact qui a déclenché ce grain (traçage)
+    this.grainId = 0
+    this.impactId = 0
+    this.gainDb = 0   // pour la priorité
+    this.dist = 0     // distance à la tête au moment de l'acquisition
   }
 }
 
 class VoicePool {
-  constructor(scene, ctx, meter) {
+  constructor(scene, ctx, meter, size) {
     this.ctx = ctx
-    this.meter = meter // unités-monde par mètre, pour min/maxDistance
+    this.meter = meter
     this.voices = []
-    this.free = []     // indices des voix libres (LIFO)
-    for (let i = 0; i < POOL_SIZE; i++) {
+    this.free = []
+    for (let i = 0; i < size; i++) {
       this.voices.push(new Voice(scene, ctx, i))
       this.free.push(i)
     }
@@ -90,29 +68,33 @@ class VoicePool {
     this._buf = new Float32Array(256)
   }
 
-  /* Joue un grain depuis la position MONDE de son impact. Acquiert une voix
-     libre — ou vole la plus ancienne (fade 5 ms) si le pool est épuisé. Les
-     distances d'atténuation du matériau sont posées à l'acquisition : le pool
-     reste partagé, le matériau garde ses paramètres (§12). */
-  play(buf, gainDb, detune, pos, material, now, trace = {}) {
+  play(buf, gainDb, detune, pos, material, now, trace = {}, head, w, seuilWeakDb, r2) {
     const { rec, grainId = 0, impactId = 0 } = trace
     let v, stolen = null
     if (this.free.length) {
       v = this.voices[this.free.pop()]
     } else {
-      v = this._oldest()
-      /* Le grain volé est coupé ICI : on capture son identité AVANT réaffectation
-         (son onended est désarmé par _cut, il n'émettra pas de `release`). */
-      stolen = { voice: v.index, grain: v.grainId, impact: v.impactId, age: +(now - v.startedAt).toFixed(1) }
+      v = this._lowestPriority(head, w)
+      const remaining = +(buf.duration * 1000 - (now - v.startedAt)).toFixed(1)
+      const victimPrio = this._priority(v, head, w, r2)
+      stolen = {
+        voice: v.index, grain: v.grainId, impact: v.impactId,
+        age: +(now - v.startedAt).toFixed(1),
+        remaining: Math.max(0, remaining),
+        prio: +victimPrio.toFixed(4),
+      }
       this._cut(v)
       this.stealCount++
     }
 
+    const dist = Math.hypot(pos.x - head.x, pos.y - head.y, pos.z - head.z)
     v.busy = true
     v.startedAt = now
     v.materialId = material.id
     v.grainId = grainId
     v.impactId = impactId
+    v.gainDb = gainDb
+    v.dist = dist
     v.pos.x = pos.x; v.pos.y = pos.y; v.pos.z = pos.z
     v.src.setMinDistance(material.minDistance * this.meter)
     v.src.setMaxDistance(material.maxDistance * this.meter)
@@ -126,8 +108,6 @@ class VoicePool {
     src.connect(g).connect(v.analyser)
     v.grainSrc = src
     v.grainGain = g
-    /* Le garde `grainSrc === src` évite qu'un onended périmé (voix volée puis
-       réaffectée) ne libère la voix sous le grain suivant. */
     src.onended = () => {
       if (v.grainSrc !== src) return
       rec?.emit('release', { grain: grainId, impact: impactId, voice: v.index, reason: 'ended' })
@@ -135,21 +115,36 @@ class VoicePool {
     }
     src.start()
 
+    const db = this.level(v)
+    const weak = isFinite(db) && db < seuilWeakDb
+
     if (stolen) rec?.emit('steal', { grain: grainId, impact: impactId, victim: stolen, fade: STEAL_FADE_S })
-    rec?.emit('acquire', { grain: grainId, impact: impactId, voice: v.index, mat: material.id, stolen: !!stolen })
+    rec?.emit('acquire', {
+      grain: grainId, impact: impactId, voice: v.index,
+      mat: material.id, stolen: !!stolen, weak,
+    })
   }
 
-  /* Pool plein ⇒ toutes les voix sont occupées : la plus ancienne est la
-     meilleure candidate (son grain est le plus proche de sa fin naturelle). */
-  _oldest() {
-    let best = this.voices[0]
-    for (const v of this.voices) if (v.startedAt < best.startedAt) best = v
-    return best
+  /* Priorité d'une voix (§5.3). Plus la priorité est haute, moins on vole cette voix. */
+  _priority(v, head, w, r2) {
+    const gainNorm = Math.min(1, Math.max(0, (v.gainDb + 60) / 60))
+    const distNorm = Math.min(1, v.dist / (r2 || 1))
+    const âgeNorm  = Math.min(1, (performance.now() - v.startedAt) / 1000)
+    return w.w_gain * gainNorm + w.w_dist * (1 - distNorm) + w.w_att * 1 - w.w_age * âgeNorm
   }
 
-  /* Vol de voix : fondu de 5 ms puis stop — l'ancien grain s'éteint proprement
-     (pas de clic), son onended est désarmé pour ne pas libérer la voix
-     fraîchement réaffectée. */
+  /* Vol par priorité minimale (remplace _oldest). */
+  _lowestPriority(head, w) {
+    const r2 = 1 // normalisé dans _priority ; passé implicitement via dist
+    let best = null, bestP = Infinity
+    for (const v of this.voices) {
+      if (!v.busy) continue
+      const p = this._priority(v, head, w, r2)
+      if (p < bestP) { bestP = p; best = v }
+    }
+    return best ?? this.voices[0]
+  }
+
   _cut(v) {
     const t = this.ctx.currentTime
     if (v.grainGain) {
@@ -171,7 +166,6 @@ class VoicePool {
     this.free.push(v.index)
   }
 
-  /* Niveau RMS (dB) d'une voix — mesuré AVANT le pipeline Resonance. */
   level(v) {
     v.analyser.getFloatTimeDomainData(this._buf)
     let sq = 0
@@ -182,26 +176,41 @@ class VoicePool {
 }
 
 export class RainSampler {
-  constructor(size = 380) {
-    this.ctx   = null
-    this.scene = null
-    this.banks = Object.fromEntries(MATERIALS.map(m => [m.id, []]))
-    this.ready = false
-    this.coords = makeCoords(size)
-    this.half  = this.coords.half
-    this.limit = this.coords.limit
-    this.pool  = null
+  constructor(worldCfgOrSize = 380) {
+    /* Rétrocompatibilité : accepte un nombre (ancienne API) ou un WorldConfig */
+    const worldCfg = (typeof worldCfgOrSize === 'number')
+      ? makeWorldConfig({ preset: 'diorama', seed: 1, _size: worldCfgOrSize })
+      : worldCfgOrSize
+
+    this.cfg    = worldCfg
+    this.ctx    = null
+    this.scene  = null
+    this.banks  = Object.fromEntries(MATERIALS.map(m => [m.id, []]))
+    this.ready  = false
+    this.coords = makeCoords(worldCfg.size)
+    this.half   = this.coords.half
+    this.limit  = this.coords.limit
+    this.pool   = null
+    this.prng   = makePrng(worldCfg.seed)
+    this.bands  = résoudreCouches(this.coords.worldRadius, worldCfg)
+    this.baked  = null // posé par setTerrain() avant init()
     this.reservoirs    = new Map()
     this.triggerCounts = new Map()
-    this._headWorld = { x: 0, y: 0, z: 0 }
-    this._cellCooldown = new Map() // clé cellule (0,5 m) → dernier déclenchement
-    this._cols = Math.ceil(size / this.coords.CELL)
-    this.recorder = null // boîte noire optionnelle (TraceRecorder) — cf. traceSample
+    this._headWorld    = { x: 0, y: 0, z: 0 }
+    this._cellCooldown = new Map()
+    this._cols = Math.ceil(worldCfg.size / this.coords.CELL)
+    this.recorder = null
+    /* Round-robin seedé par matériau (évite Math.random dans le chemin audio) */
+    this._rr = Object.fromEntries(MATERIALS.map(m => [m.id, 0]))
+    /* Accumulateurs Poisson par matériau (intervalle restant avant prochain impact) */
+    this._poissonAcc = Object.fromEntries(MATERIALS.map(m => [m.id, 0]))
+    this._poissonNext = Object.fromEntries(MATERIALS.map(m => [m.id, 0]))
   }
 
-  /* Branche/débranche la boîte noire. Quand un recorder est posé ET en cours
-     d'enregistrement, toute la chaîne (décisions, rejets, voix, vols) émet ses
-     événements. Sinon le coût est nul (gardes `rec?.` + `recording`). */
+  setTerrain(terrain) {
+    this.baked = bakeImpactPoints(terrain, this.coords)
+  }
+
   setRecorder(rec) { this.recorder = rec }
 
   async init() {
@@ -209,7 +218,7 @@ export class RainSampler {
 
     const h = this.half
     this.scene = new ResonanceAudio(this.ctx, {
-      ambisonicOrder: AMBISONIC_ORDER,
+      ambisonicOrder: this.cfg.ambisonicOrder ?? 3,
       dimensions: { width: h * 2, height: h * 2, depth: h * 2 },
       materials: {
         left: 'transparent', right: 'transparent',
@@ -217,28 +226,19 @@ export class RainSampler {
         up: 'transparent',   down: 'grass',
       },
     })
-    /* Gain de compensation : Resonance Audio atténue le signal via son pipeline ambisonique */
     const masterGain = this.ctx.createGain()
     masterGain.gain.value = 3
     this.scene.output.connect(masterGain).connect(this.ctx.destination)
-
-    /* Orientation de l'auditeur posée UNE fois et FIXE : la tête est l'input de
-       référence, elle ne tourne pas avec l'orbite caméra (spin). Le champ sonore
-       reste ancré au monde — orbiter la vue change le point de vue, pas l'écoute. */
     this.scene.setListenerOrientation(...worldToResonance(LISTENER_FORWARD), 0, 1, 0)
 
-    /* Tap de mesure sur la sortie master — niveau RÉEL post-atténuation (le seul
-       qui reflète ce qu'on entend, contrairement aux analysers par voix qui sont
-       en amont du pipeline Resonance). */
     this._masterAnalyser = this.ctx.createAnalyser()
     this._masterAnalyser.fftSize = 256
     this._masterAnalyser.smoothingTimeConstant = 0.8
     this._masterBuf = new Float32Array(256)
     masterGain.connect(this._masterAnalyser)
 
-    /* UN pool de voix partagé (budget fixe, indépendant du terrain et de la
-       pluie) + un réservoir de cadence PAR MATÉRIAU pour le DebugHUD. */
-    this.pool = new VoicePool(this.scene, this.ctx, this.coords.METER)
+    const voices = this.cfg.layers.L1.voices
+    this.pool = new VoicePool(this.scene, this.ctx, this.coords.METER, voices)
     for (const m of MATERIALS) {
       this.reservoirs.set(m.id, new ImpactReservoir(64))
       this.triggerCounts.set(m.id, 0)
@@ -246,12 +246,31 @@ export class RainSampler {
 
     await Promise.all(MATERIALS.map(m => this._loadBank(m.id, m.urls)))
     this.ready = true
+
+    /* Émet l'événement scale initial */
+    this._emitScale()
+  }
+
+  /* Reconfigure l'échelle sans recréer le contexte audio. */
+  setScale(worldCfg) {
+    this.cfg   = worldCfg
+    this.coords = makeCoords(worldCfg.size)
+    this.half  = this.coords.half
+    this.limit = this.coords.limit
+    this.prng  = makePrng(worldCfg.seed)
+    this.bands = résoudreCouches(this.coords.worldRadius, worldCfg)
+    this._emitScale()
+  }
+
+  _emitScale() {
+    const { preset, size } = this.cfg
+    const { r1, r2, overlap } = this.bands
+    this.recorder?.emit('scale', { preset, size, r1, r2, overlap })
   }
 
   async _loadBank(name, urls) {
     const buffers = await Promise.all(urls.map(u => this._decode(u)))
     this.banks[name] = buffers.filter(Boolean)
-    /* Durées loguées pour dimensionner POOL_SIZE : concurrence ≈ débit × durée. */
     const durs = this.banks[name].map(b => b.duration)
     const mean = durs.length ? durs.reduce((a, b) => a + b, 0) / durs.length : 0
     const max  = durs.length ? Math.max(...durs) : 0
@@ -276,9 +295,6 @@ export class RainSampler {
     return r * this._cols + c
   }
 
-  /* nx, ny, nz : coordonnées normalisées [-1, 1] provenant de DioramaApp.
-     Input auditeur → monde Three.js → Resonance, via les conversions uniques
-     de coords.js (le « piège du Z » vit là, pas ici). */
   setListenerPosition(nx, ny, nz) {
     if (!this.scene) return
     const world = headInputToWorld({ x: nx, y: ny, z: nz }, this.limit)
@@ -286,10 +302,72 @@ export class RainSampler {
     this.scene.setListenerPosition(...worldToResonance(world))
   }
 
-  trigger(surface, { x = 0, z = 0, gainDb = 0, detune = 0, impactId = 0 } = {}) {
+  /* Boucle Poisson (game thread). Appelée chaque frame avec dtMs.
+     surfaceDensities = { metal, bache, terre } : activité de chaque surface (0 ou 1).
+     density = multiplicateur global (0..1) depuis l'UI. */
+  tickPoisson(dtMs, surfaceDensities, density = 1) {
+    if (!this.ready || !this.baked || this.ctx?.state === 'suspended') return
     const rec = this.recorder
-    /* Chaque sortie anticipée est un NON-SON : journalisé avec sa raison, car
-       « pourquoi cet impact n'a pas sonné » est l'essentiel du débogage. */
+
+    for (const m of MATERIALS) {
+      const sid = m.id
+      const active = surfaceDensities[sid] !== false
+      if (!active) { this._poissonNext[sid] = 0; continue }
+
+      /* Surface exposée = nombre de points baked exposés pour ce matériau */
+      const exposed = this.baked.points.filter(p => p.matériau === sid && p.expoCiel > 0).length
+      if (!exposed) continue
+
+      const λ = density * exposed * (MAT_FACTOR[sid] ?? 1) * 0.05 // grains/ms
+      if (λ <= 0) continue
+
+      this._poissonAcc[sid] = (this._poissonAcc[sid] || 0) + dtMs
+
+      /* Tire autant d'impacts que l'intervalle de Poisson le permet */
+      while (this._poissonAcc[sid] >= this._poissonNext[sid]) {
+        this._poissonAcc[sid] -= this._poissonNext[sid]
+        /* Prochain intervalle : distribution exponentielle (−ln(u)/λ) */
+        const u = Math.max(1e-9, this.prng.aléa())
+        this._poissonNext[sid] = -Math.log(u) / λ
+
+        const point = pickImpact(this.baked, sid, this.prng)
+        if (!point) continue
+
+        const impactId = rec?.recording ? rec.nextImpactId() : 0
+        if (impactId) {
+          rec.emit('impact', {
+            impact: impactId, surface: sid,
+            x: Math.round(point.position.x),
+            z: Math.round(point.position.z),
+          })
+        }
+
+        /* Sélection sample seedée (round-robin + décalage PRNG) */
+        const bank = this.banks[sid]
+        if (!bank?.length) continue
+        this._rr[sid] = (this._rr[sid] + 1 + Math.floor(this.prng.aléa() * bank.length)) % bank.length
+        const idx = this._rr[sid]
+        const buf = bank[idx]
+
+        /* Detune depuis le PRNG (plus de Math.random) */
+        const detune = (this.prng.aléa() - 0.5) * 40
+
+        this.trigger(sid, {
+          x: point.position.x,
+          y: point.position.y,
+          z: point.position.z,
+          gainDb: 0,
+          detune,
+          impactId,
+          _buf: buf,
+          _idx: idx,
+        })
+      }
+    }
+  }
+
+  trigger(surface, { x = 0, y = null, z = 0, gainDb = 0, detune = 0, impactId = 0, _buf, _idx } = {}) {
+    const rec = this.recorder
     if (!this.ready || this.ctx.state === 'suspended') {
       rec?.emit('reject', { impact: impactId, surface, reason: this.ready ? 'suspended' : 'not-ready' })
       return
@@ -299,7 +377,6 @@ export class RainSampler {
     const material = materialById(surface)
     if (!material) { rec?.emit('reject', { impact: impactId, surface, reason: 'no-material' }); return }
 
-    /* Cooldown PAR CELLULE (0,5 m) — remplace le cooldown par zone (§13.4) */
     const key = this._cellKey(x, z)
     const now = performance.now()
     if (now - (this._cellCooldown.get(key) || 0) < COOLDOWN_MS) {
@@ -308,49 +385,52 @@ export class RainSampler {
     }
     this._cellCooldown.set(key, now)
 
-    /* Position MONDE du grain : impact au sol, composante verticale écrasée
-       vers la tête (Y_FLATTEN, correction 3) — figée ICI, au déclenchement,
-       puisque la position d'un grain ne bouge plus jamais ensuite. */
+    /* Position réelle depuis le relief (y fourni par tickPoisson via pickImpact) */
     const head = this._headWorld
-    const pos = { x, y: head.y + (this.coords.ground - head.y) * Y_FLATTEN, z }
+    const posY = (y !== null) ? y : this.coords.ground
+    const pos = { x, y: posY, z }
+
     this.reservoirs.get(surface).add(now)
     this.triggerCounts.set(surface, this.triggerCounts.get(surface) + 1)
-    const idx = Math.floor(Math.random() * bank.length)
-    const buf = bank[idx]
-    /* Grain accepté : on lui donne un id et on journalise TOUTES ses
-       caractéristiques de déclenchement. `sample`+`detune` rendent le grain
-       reproductible (relecture déterministe : même son sans audio enregistré). */
+
+    /* Sample : soit pré-sélectionné par tickPoisson, soit fallback seedé */
+    let buf = _buf, idx = _idx
+    if (!buf) {
+      this._rr[surface] = (this._rr[surface] + 1 + Math.floor(this.prng.aléa() * bank.length)) % bank.length
+      idx = this._rr[surface]
+      buf = bank[idx]
+    }
+
     const grainId = rec ? rec.nextGrainId() : 0
     rec?.emit('trigger', {
       impact: impactId, grain: grainId, surface,
-      x: Math.round(x), y: Math.round(pos.y), z: Math.round(z),
+      x: Math.round(x), y: Math.round(posY), z: Math.round(z),
       gainDb, detune: +detune.toFixed(1),
       sample: idx, dur: +buf.duration.toFixed(3),
       minDist: material.minDistance, maxDist: material.maxDistance,
     })
-    this.pool.play(buf, gainDb, detune, pos, material, now, { rec, grainId, impactId })
+
+    const w = this.cfg.layers.L1.priorité
+    const seuilWeakDb = this.cfg.layers.L1.seuilWeakDb
+    const r2 = this.bands.r2
+    this.pool.play(buf, gainDb, detune, pos, material, now, { rec, grainId, impactId }, head, w, seuilWeakDb, r2)
   }
 
-  /* ── Échantillon de trace — les 6 pistes ────────────────────────────────────
-     Appelé à cadence fixe par la boucle d'enregistrement. Pour chaque voix
-     ACTIVE : enveloppe RMS (avec grain, impact, position) — on suit l'amplitude
-     d'un son tout au long de sa vie. Puis projection de toutes les voix sur les
-     6 faces de la tête : un événement `faces` par tick = un point sur chacune
-     des 6 timelines. Les niveaux par face sont aussi reconstituables hors-ligne
-     depuis les `env` (position) + l'état auditeur (deltas) ; `faces` est le
-     résumé prêt à tracer. */
   traceSample(rec) {
     if (!rec?.recording || !this.pool) return
     const head = this._headWorld
     const faceSum = new Array(HEAD_FACES.length).fill(0)
+    const seuilWeakDb = this.cfg.layers.L1.seuilWeakDb
     for (const v of this.pool.voices) {
       if (!v.busy) continue
       const db = this.pool.level(v)
       if (!isFinite(db)) continue
+      const weak = db < seuilWeakDb
       rec.emit('env', {
         grain: v.grainId, impact: v.impactId, voice: v.index, mat: v.materialId,
         db: +db.toFixed(2),
         x: Math.round(v.pos.x), y: Math.round(v.pos.y), z: Math.round(v.pos.z),
+        weak,
       })
       const lin = Math.pow(10, db / 20)
       const dx = v.pos.x - head.x, dy = v.pos.y - head.y, dz = v.pos.z - head.z
@@ -364,13 +444,17 @@ export class RainSampler {
     rec.emit('faces', {
       labels: HEAD_FACES.map(f => f.label),
       db: faceSum.map(s => s < 1e-8 ? null : +(20 * Math.log10(s)).toFixed(2)),
-      head: { x: Math.round(head.x), y: Math.round(head.y), z: Math.round(head.z) },
+      head: {
+        x: Math.round(head.x), y: Math.round(head.y), z: Math.round(head.z),
+        fwd: [LISTENER_FORWARD.x, LISTENER_FORWARD.y, LISTENER_FORWARD.z],
+        up:  [0, 1, 0],
+      },
       busy: this.pool.voices.reduce((n, v) => n + (v.busy ? 1 : 0), 0),
+      size: this.cfg.layers.L1.voices,
+      steals: this.pool.stealCount,
     })
   }
 
-  /* État par matériau pour le DebugHUD : débit, niveau cumulé et voix ACTIVES
-     du matériau (positions réelles des grains en cours de lecture). */
   materialMeters() {
     const now = performance.now()
     return MATERIALS.map((m) => {
@@ -395,9 +479,6 @@ export class RainSampler {
     })
   }
 
-  /* Snapshot des voix pour l'overlay 3D de debug : position MONDE réelle de
-     chaque voix (celle entendue, Y_FLATTEN compris), matériau et niveau RMS.
-     N'allouer qu'en mode debug — appelé depuis la boucle de rendu. */
   debugVoices() {
     if (!this.pool) return []
     return this.pool.voices.map(v => ({
@@ -408,16 +489,13 @@ export class RainSampler {
     }))
   }
 
-  /* Occupation du pool (DebugHUD) : voix actives / budget, vols cumulés.
-     Un compteur de vols qui grimpe = pool sous-dimensionné pour le débit. */
   poolStats() {
-    if (!this.pool) return { busy: 0, size: POOL_SIZE, steals: 0 }
+    if (!this.pool) return { busy: 0, size: this.cfg.layers.L1.voices, steals: 0 }
     let busy = 0
     for (const v of this.pool.voices) if (v.busy) busy++
-    return { busy, size: POOL_SIZE, steals: this.pool.stealCount }
+    return { busy, size: this.cfg.layers.L1.voices, steals: this.pool.stealCount }
   }
 
-  /* Niveau RÉEL de la sortie master (post-atténuation) — ce qu'on entend. */
   getMasterLevel() {
     const a = this._masterAnalyser
     if (!a) return -Infinity

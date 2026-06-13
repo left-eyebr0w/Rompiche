@@ -117,6 +117,8 @@ export class TraceRecorder {
       type: 'header',
       format: 'rompiche-trace/1',
       meta: this.meta,
+      seed: this.meta?.seed ?? null,
+      engine: this.meta?.engine ?? null,
       count: this.count,
       truncated: this.count >= this.cap, // anneau plein ⇒ début perdu
     }

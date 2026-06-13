@@ -272,14 +272,13 @@ export default function WireframeCube({
             const disp  = Math.sin(wTilt) * (-half - baseY)
             const ix    = baseX + Math.cos(wRot) * disp
             const iz    = baseZ + Math.sin(wRot) * disp
-            /* Matériau lu depuis le terrain (couche 1). Les interrupteurs
-               métal/bâche rabattent leur surface sur 'terre' quand elle est
-               désactivée — comportement identique à l'ancien `ix < 0 ? …`. */
+            /* Visuel seulement : cb peut être utilisé pour un flash visuel mais
+               ne déclenche plus de son. L'audio est piloté par tickPoisson (T-0.H1). */
             const base = terr?.cellAt(ix, iz)?.material?.id ?? 'terre'
             let surface = base
             if (base === 'metal' && !mActive) surface = 'terre'
             else if (base === 'bache' && !bActive) surface = 'terre'
-            cb(surface, { x: ix, z: iz })
+            cb(surface, { x: ix, z: iz }) // callback conservé pour usage visuel uniquement
           }
         }
       }
