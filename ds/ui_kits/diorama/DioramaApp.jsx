@@ -203,7 +203,7 @@ export default function DioramaApp() {
     return () => cancelAnimationFrame(rafId)
   }, [recording])
 
-  /* T-2.5 — Boucle update secteurs ~30 Hz (1 frame/2). Tourne dès que l'écoute est active. */
+  /* T-2.5 / T-3.4 — Boucle update secteurs + évaluation LOD ~30 Hz. Tourne dès que l'écoute est active. */
   React.useEffect(() => {
     let frame = 0, rafId
     const loop = () => {
@@ -211,12 +211,22 @@ export default function DioramaApp() {
       if (++frame % 2 !== 0) return
       const s = samplerRef.current
       if (!s?.ready || !stateRef.current.listening) return
-      const st = stateRef.current
-      /* Terrain actuel (ref synchrone) pour les calculs d'occlusion */
-      s.sectors?.update(terrainRef.current, s._headWorld, recRef.current)
+      const rec = recRef.current
+      s.sectors?.update(terrainRef.current, s._headWorld, rec)
+      s.évaluerLod?.(rec)
     }
     rafId = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(rafId)
+  }, [])
+
+  /* T-3.5 — Levier de budget ~1 Hz : ajuste r1 sous pression pool. */
+  React.useEffect(() => {
+    const id = setInterval(() => {
+      const s = samplerRef.current
+      if (!s?.ready || !stateRef.current.listening) return
+      s.ajusterBudget(recRef.current)
+    }, 1000)
+    return () => clearInterval(id)
   }, [])
 
   /* Boucle Poisson (game thread) : pilote les impacts audio indépendamment du visuel.

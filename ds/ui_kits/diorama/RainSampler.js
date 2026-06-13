@@ -6,6 +6,8 @@ import { makeWorldConfig, résoudreCouches } from './worldConfig.js'
 import { bakeImpactPoints, pickImpact } from './BakedSet.js'
 import { DiffuseBed, resolveBedConfig } from './DiffuseBed.js'
 import { SectorField } from './SectorField.js'
+import { LodController, FONDU_S } from './LodController.js'
+import { resolveLodParams } from './lod.js'
 
 const COOLDOWN_MS = 80   // anti-mitraillage PAR CELLULE (0,5 m) — §13.4
 const WINDOW_MS   = 400  // fenêtre glissante du réservoir (débit du DebugHUD) — §13.3
@@ -280,10 +282,72 @@ export class RainSampler {
       )
     }
 
+    /* T-3.2 — Instancier le contrôleur LOD */
+    this._lodParams = resolveLodParams(this.bands, this.cfg)
+    this._lod = new LodController(this._lodParams, {
+      onDémote: (voice, de, vers) => this._onDémote(voice, de, vers),
+      onPromote: (voice, de, vers) => this._onPromote(voice, de, vers),
+    })
+
     this.ready = true
 
     /* Émet l'événement scale initial */
     this._emitScale()
+  }
+
+  /* T-3.3 — Hook de démotion : coupe la voix héros + alimente le secteur. */
+  _onDémote(voice, de, vers) {
+    if (de === 'L1') {
+      /* Fade-out de la voix HRTF (20 ms — inaudible) */
+      if (voice.grainGain && voice.grainSrc) {
+        const t = this.ctx.currentTime
+        voice.grainGain.gain.cancelScheduledValues(t)
+        voice.grainGain.gain.setValueAtTime(voice.grainGain.gain.value, t)
+        voice.grainGain.gain.linearRampToValueAtTime(0, t + FONDU_S)
+        voice.grainSrc.onended = null
+        try { voice.grainSrc.stop(t + FONDU_S) } catch { /* déjà stoppé */ }
+      }
+      /* Verse l'énergie dans le secteur correspondant */
+      if (this.sectors?.actif) {
+        this.sectors.absorberImpact(voice.pos, voice.materialId, this._headWorld)
+      }
+    }
+    /* L2→L3 : rien à faire structurellement (la nappe porte le fond) */
+  }
+
+  /* T-3.3 — Hook de promotion : tente de réacquérir une voix héros. */
+  _onPromote(voice, de, vers) {
+    if (vers !== 'L1') return true // L3→L2 toujours acceptée
+    if (!this.pool || !this.pool.free.length) return false // budget saturé
+    /* La voix est déjà libérée — aucun re-play immédiat (promotion "prête" pour le prochain impact) */
+    return true
+  }
+
+  /* T-3.5 — Levier de budget : ajuste r1 sous pression pool. */
+  ajusterBudget(rec) {
+    if (!this.pool || !this._lodParams) return
+    const stats = this.poolStats()
+    const p     = this._lodParams
+    let r1Adj   = p.r1
+
+    if (stats.busy >= p.busyHi * stats.size) {
+      r1Adj = Math.max(p.r1Min, p.r1 - p.pas)
+    } else if (stats.busy < p.busyLo * stats.size) {
+      r1Adj = Math.min(p.r1Max, p.r1 + p.pas)
+    }
+
+    if (r1Adj !== p.r1) {
+      p.r1 = r1Adj
+      this._lod?.setParams(p)
+    }
+
+    rec?.emit('budget', {
+      busyL1:        stats.busy,
+      sizeL1:        stats.size,
+      steals:        stats.steals,
+      sectorsActive: this.sectors?.N ?? 0,
+      r1Adj:         +r1Adj.toFixed(2),
+    })
   }
 
   /* T-1.5 — Pilote la nappe selon la météo courante. */
@@ -468,7 +532,19 @@ export class RainSampler {
 
     const w = this.cfg.layers.L1.priorité
     const seuilWeakDb = this.cfg.layers.L1.seuilWeakDb
-    this.pool.play(buf, gainDb, detune, pos, material, now, { rec, grainId, impactId }, head, w, seuilWeakDb, r2)
+    this.pool.play(buf, gainDb, detune, pos, material, now, { rec, grainId, impactId }, head, w, seuilWeakDb, this.bands.r2)
+
+    /* T-3.3 — Enregistre la voix auprès du LodController pour suivi de distance */
+    if (this._lod) {
+      /* Retrouve la voix qui vient d'être acquise (celle portant grainId) */
+      const voice = this.pool.voices.find(v => v.grainId === grainId && v.busy)
+      if (voice) this._lod.track(voice)
+    }
+  }
+
+  /* T-3.4 — Évaluation LOD appelée à ~30 Hz depuis DioramaApp. */
+  évaluerLod(rec) {
+    this._lod?.évaluerTout(this._headWorld, rec)
   }
 
   traceSample(rec) {
