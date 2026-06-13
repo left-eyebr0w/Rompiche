@@ -4,6 +4,7 @@ import { makeCoords, headInputToWorld, worldToResonance, LISTENER_FORWARD, HEAD_
 import { makePrng } from './prng.js'
 import { makeWorldConfig, résoudreCouches } from './worldConfig.js'
 import { bakeImpactPoints, pickImpact } from './BakedSet.js'
+import { DiffuseBed, resolveBedConfig } from './DiffuseBed.js'
 
 const COOLDOWN_MS = 80   // anti-mitraillage PAR CELLULE (0,5 m) — §13.4
 const WINDOW_MS   = 400  // fenêtre glissante du réservoir (débit du DebugHUD) — §13.3
@@ -216,6 +217,18 @@ export class RainSampler {
   async init() {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)()
 
+    /* T-1.3 — Charger le worklet avant la scène (fallback silencieux sur erreur) */
+    try {
+      await this.ctx.audioWorklet.addModule(
+        new URL('./worklets/noise-processor.js', import.meta.url)
+      )
+      this._workletReady = true
+    } catch (e) {
+      console.warn('[RainSampler] worklet noise non chargé — nappe désactivée', e)
+      this._workletReady = false
+      this.recorder?.emit('reject', { reason: 'no-worklet' })
+    }
+
     const h = this.half
     this.scene = new ResonanceAudio(this.ctx, {
       ambisonicOrder: this.cfg.ambisonicOrder ?? 3,
@@ -228,6 +241,7 @@ export class RainSampler {
     })
     const masterGain = this.ctx.createGain()
     masterGain.gain.value = 3
+    this._masterGain = masterGain
     this.scene.output.connect(masterGain).connect(this.ctx.destination)
     this.scene.setListenerOrientation(...worldToResonance(LISTENER_FORWARD), 0, 1, 0)
 
@@ -245,10 +259,24 @@ export class RainSampler {
     }
 
     await Promise.all(MATERIALS.map(m => this._loadBank(m.id, m.urls)))
+
+    /* T-1.4 — Instancier la nappe diffuse */
+    if (this._workletReady) {
+      const bedCfg = resolveBedConfig(this.cfg, this.bands)
+      this.bed = new DiffuseBed(this.ctx, masterGain, bedCfg, this.prng)
+      this.bed.attachWorklet(bedCfg.noise)
+    }
+
     this.ready = true
 
     /* Émet l'événement scale initial */
     this._emitScale()
+  }
+
+  /* T-1.5 — Pilote la nappe selon la météo courante. */
+  setWeather(weather) {
+    if (!this.bed) return
+    this.bed.setWeather(weather, this.recorder?.stateVersion, this.recorder)
   }
 
   /* Reconfigure l'échelle sans recréer le contexte audio. */
@@ -259,6 +287,8 @@ export class RainSampler {
     this.limit = this.coords.limit
     this.prng  = makePrng(worldCfg.seed)
     this.bands = résoudreCouches(this.coords.worldRadius, worldCfg)
+    /* T-1.6 — Collapse diorama : bascule le mode mince de la nappe */
+    this.bed?.setMince(this.bands.collapse === 'diorama')
     this._emitScale()
   }
 

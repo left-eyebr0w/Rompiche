@@ -104,6 +104,9 @@ export default function DioramaApp() {
     samplerRef.current = s
     const h = headRef.current
     s.setListenerPosition(h.x, h.y, h.z)
+    /* Initialise la nappe diffuse avec l'état météo courant */
+    const st = stateRef.current
+    s.setWeather({ intensité: st.rain ? st.density : 0, vent: st.windForce, dir: st.windRotation })
   }, [])
 
   React.useEffect(() => {
@@ -170,6 +173,17 @@ export default function DioramaApp() {
     }
   }, [state.rain, state.wind, state.windTilt, state.windRotation, state.windForce,
       state.metal, state.bache, state.x, state.y, state.z, state.density, state.gain, recording])
+
+  /* T-1.5 — Pilotage météo → nappe diffuse. Appelé quand pluie/densité/vent changent. */
+  React.useEffect(() => {
+    const s = samplerRef.current
+    if (!s?.ready) return
+    s.setWeather({
+      intensité: state.rain ? state.density : 0,
+      vent: state.windForce,
+      dir: state.windRotation,
+    })
+  }, [state.rain, state.density, state.windForce, state.windRotation])
 
   /* Boucle d'échantillonnage des 6 pistes (~30 Hz, 1 frame sur 2). Autonome :
      tourne tant qu'on enregistre, que le DebugHUD soit ouvert ou non. */
