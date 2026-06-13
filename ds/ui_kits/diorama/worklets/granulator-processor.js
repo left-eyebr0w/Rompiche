@@ -62,7 +62,13 @@ class GranulatorProcessor extends AudioWorkletProcessor {
         return
       }
       /* Mise à jour params météo/densité */
-      if (msg.débit   !== undefined) this._débit    = msg.débit
+      if (msg.débit !== undefined) {
+        const prev = this._débit
+        this._débit = msg.débit
+        if (prev <= 0 && this._débit > 0 && this._ready) {
+          this._scheduleNext()
+        }
+      }
       if (msg.matMix  !== undefined) this._matMix   = msg.matMix
       if (msg.occlusion !== undefined) this._occlusion = msg.occlusion
     }

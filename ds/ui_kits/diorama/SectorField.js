@@ -80,11 +80,17 @@ export class SectorField {
   _sendBanks(worklet, banks, sr) {
     const serialized = {}
     for (const m of MATERIALS) {
-      serialized[m.id] = (banks[m.id] ?? []).map(buf => {
-        const arr = new Float32Array(buf.length)
-        arr.set(buf.getChannelData(0))
+      const buffers = banks[m.id] ?? []
+      serialized[m.id] = buffers.map(buf => {
+        /* buf est un AudioBuffer — extraire les données mono du canal 0 */
+        const channelData = buf.getChannelData(0)
+        const arr = new Float32Array(channelData.length)
+        arr.set(channelData)
         return arr
       })
+      if (buffers.length > 0) {
+        console.debug(`[SectorField] ${m.id}: ${buffers.length} samples envoyés au worklet`)
+      }
     }
     worklet.port.postMessage({ type: 'banks', banks: serialized, sampleRate: sr })
   }

@@ -56,14 +56,15 @@ export default function DioramaApp() {
     clockMode: 'sync', clockSegment: 'jour',
     debug: false,
     preset: 'diorama', seed: 1,
+    platform: 'desktop',
   })
   const [time, setTime] = React.useState(now)
   const set = (patch) => setState(s => ({ ...s, ...patch }))
 
-  /* WorldConfig dérivé du preset/seed courant — reconstruit si preset ou seed change */
+  /* WorldConfig dérivé du preset/seed/platform courant — reconstruit si preset, seed ou platform change */
   const worldCfg = React.useMemo(
-    () => makeWorldConfig({ preset: state.preset ?? 'diorama', seed: state.seed ?? 1 }),
-    [state.preset, state.seed],
+    () => makeWorldConfig({ preset: state.preset ?? 'diorama', seed: state.seed ?? 1, platform: state.platform ?? 'desktop' }),
+    [state.preset, state.seed, state.platform],
   )
 
   /* Terrain (couche 1) — recalculé avec la taille du worldCfg */

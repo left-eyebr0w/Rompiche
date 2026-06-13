@@ -99,6 +99,33 @@ export default function ControlHUD(props) {
         </section>
 
         <section className="hud__sec">
+          <div className="hud__sech"><Icon name="cpu" /><Eyebrow tone="inverse">Profil plateforme</Eyebrow></div>
+          <div className="hud__stack">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '13px', color: 'var(--on-ink-secondary)' }}>
+                Plateforme
+              </label>
+              <select value={state.platform ?? 'desktop'}
+                onChange={e => set({ platform: e.target.value })}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '4px',
+                  border: '1px solid var(--on-ink-border)',
+                  background: 'transparent',
+                  color: 'var(--on-ink-primary)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                }}>
+                <option value="mobile">Mobile (14 voix, 4 secteurs)</option>
+                <option value="desktop">Desktop (40 voix, 8 secteurs)</option>
+                <option value="vr">VR (64 voix, 12 secteurs)</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <section className="hud__sec">
           <div className="hud__sech"><Icon name="box" /><Eyebrow tone="inverse">Éléments · surfaces</Eyebrow></div>
           <div className="hud__stack">
             <Switch inverse label="Surface métal" showState checked={state.metal}

@@ -83,13 +83,16 @@ export class ReplayEngine {
 
   /**
    * Re-simule depuis header.seed + timeline state/scale/weather.
-   * Injecte les entrées dans le moteur, qui re-tire Poisson/sélection/LOD.
+   * Utilise audioCtx.currentTime pour le scheduling précis des événements.
    * @param {object} sampler — instance RainSampler configurée (même banques)
    * @returns {Promise<void>}
    */
   async replayB(sampler) {
     if (!this._header?.seed) throw new Error('[ReplayEngine] seed manquant dans le header')
     if (!sampler?.ready)     throw new Error('[ReplayEngine] sampler non prêt')
+
+    const ctx = sampler.ctx
+    const t0 = ctx.currentTime
 
     /* Reconstruit le WorldConfig depuis le header */
     const cfg = makeWorldConfig({
@@ -98,28 +101,52 @@ export class ReplayEngine {
     })
     sampler.setScale(cfg)
 
-    /* Rejoue la timeline d'état : les événements `state` pilotent la météo */
-    const stateEvents = this._events.filter(e => e.type === 'state' || e.type === 'weather')
-    for (const e of stateEvents) {
-      const delay = e.at ?? 0
-      setTimeout(() => {
-        if (e.patch) {
-          const { density, rain } = e.patch
-          if (density !== undefined || rain !== undefined) {
-            const intensité = (rain ?? true) ? (density ?? 0.5) : 0
-            sampler.setWeather({ intensité, vent: 0, dir: 0 })
-          }
-          if (e.patch.x !== undefined || e.patch.z !== undefined) {
-            sampler.setListenerPosition(
-              e.patch.x ?? 0, e.patch.y ?? 0, e.patch.z ?? 0
-            )
-          }
-        }
-      }, delay * 1000)
+    /* Trie et filtre les événements d'état (state/scale/weather) */
+    const stateEvents = this._events
+      .filter(e => e.type === 'state' || e.type === 'weather' || e.type === 'scale')
+      .sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
+
+    if (stateEvents.length === 0) {
+      console.log(`[ReplayEngine] mode B — seed=${this._header.seed}, aucun état à rejouer`)
+      return
     }
 
-    /* Le moteur re-tire Poisson/sélection/LOD depuis le même seed — le reste est géré
-       par les boucles RAF existantes (tickPoisson, évaluerLod, etc.). */
-    console.log(`[ReplayEngine] mode B démarré — seed=${this._header.seed}, ${stateEvents.length} états à rejouer`)
+    /* Boucle RAF : drainer les événements dus depuis t0 */
+    const t1 = t0 + stateEvents[stateEvents.length - 1].at ?? 0
+    let eventIndex = 0
+
+    return new Promise(resolve => {
+      const loop = () => {
+        const now = ctx.currentTime
+        if (now > t1) {
+          console.log(`[ReplayEngine] mode B terminé — seed=${this._header.seed}, ${stateEvents.length} états rejoués`)
+          resolve()
+          return
+        }
+
+        /* Drainer tous les événements dus au bloc audio courant */
+        while (eventIndex < stateEvents.length) {
+          const e = stateEvents[eventIndex]
+          if ((e.at ?? 0) + t0 > now) break // pas encore dû
+
+          if (e.patch) {
+            const { density, rain, x, y, z } = e.patch
+            /* Météo */
+            if (density !== undefined || rain !== undefined) {
+              const intensité = (rain ?? true) ? (density ?? 0.5) : 0
+              sampler.setWeather({ intensité, vent: 0, dir: 0 })
+            }
+            /* Position auditeur */
+            if (x !== undefined || z !== undefined) {
+              sampler.setListenerPosition(x ?? 0, y ?? 0, z ?? 0)
+            }
+          }
+          eventIndex++
+        }
+
+        requestAnimationFrame(loop)
+      }
+      requestAnimationFrame(loop)
+    })
   }
 }

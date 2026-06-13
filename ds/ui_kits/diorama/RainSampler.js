@@ -297,6 +297,8 @@ export class RainSampler {
         this.prng.fork ? this.prng.fork() : this.prng,
         this.banks,
       )
+      /* T-2.3b — Garantir que les banques sont reçues par les worklets (mesure défensive) */
+      this.sectors.setBanks(this.banks)
     }
 
     /* T-3.2 — Instancier le contrôleur LOD */

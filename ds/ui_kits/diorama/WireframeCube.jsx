@@ -17,9 +17,9 @@ function buildCubeEdges(size, color) {
 }
 
 /* Ground-face hatch geometry — métal = 45° lines, terre = dot grid */
-function buildMetalHatch(halfX, halfZ) {
+function buildMetalHatch(halfX, halfZ, size) {
   const pts = []
-  const step = 12
+  const step = Math.max(0.5, size / 25)
   for (let c = -(halfX + halfZ); c <= halfX + halfZ; c += step) {
     // NE diagonal: z = x + c, clipped to rectangle [-halfX,halfX]×[-halfZ,halfZ]
     const x1 = Math.max(-halfX, -halfZ - c), x2 = Math.min(halfX, halfZ - c)
@@ -38,9 +38,9 @@ function buildMetalHatch(halfX, halfZ) {
   return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: C.wireFaint }))
 }
 
-function buildBacheGrid(halfX, halfZ) {
+function buildBacheGrid(halfX, halfZ, size) {
   const pts = []
-  const step = 11
+  const step = Math.max(0.5, size / 25)
   for (let x = -halfX; x <= halfX; x += step) {
     pts.push(new THREE.Vector3(x, 0, -halfZ))
     pts.push(new THREE.Vector3(x, 0,  halfZ))
@@ -54,15 +54,16 @@ function buildBacheGrid(halfX, halfZ) {
 }
 
 /* Build rain buffer — random (x,z) fixed, y animated via shader time uniform */
-function buildRain(half, count) {
+function buildRain(half, count, size) {
   const positions = []
   const speeds   = []
   const offsets  = []
+  const margin = half * 0.92
   for (let i = 0; i < count; i++) {
     positions.push(
-      (Math.random() * 2 - 1) * (half - 14),
-      (Math.random() * 2 - 1) * (half - 14),
-      (Math.random() * 2 - 1) * (half - 14),
+      (Math.random() * 2 - 1) * margin,
+      (Math.random() * 2 - 1) * margin,
+      (Math.random() * 2 - 1) * margin,
     )
     speeds.push(0.55 + Math.random() * 0.7)
     offsets.push(Math.random())
@@ -142,11 +143,11 @@ export default function WireframeCube({
     scene.add(worldEdges)
 
     /* Ground plane split — left=métal, right=bâche (cf. terrain par défaut) */
-    const metalHatch = buildMetalHatch(half / 2, half)
+    const metalHatch = buildMetalHatch(half / 2, half, size)
     metalHatch.position.set(-half / 2, -half, 0)
     scene.add(metalHatch)
 
-    const bacheGrid = buildBacheGrid(half / 2, half)
+    const bacheGrid = buildBacheGrid(half / 2, half, size)
     bacheGrid.position.set(half / 2, -half, 0)
     scene.add(bacheGrid)
 
@@ -164,7 +165,8 @@ export default function WireframeCube({
     scene.add(headEdges)
 
     /* Listener dot */
-    const headDotGeo = new THREE.SphereGeometry(2, 8, 8)
+    const headDotRadius = Math.max(0.2, HC * 0.25)
+    const headDotGeo = new THREE.SphereGeometry(headDotRadius, 8, 8)
     const headDotMat = new THREE.MeshBasicMaterial({ color: C.blanc, transparent: true, opacity: 0.5 })
     const headDot    = new THREE.Mesh(headDotGeo, headDotMat)
     scene.add(headDot)
@@ -178,7 +180,8 @@ export default function WireframeCube({
       [0, HCH, 0], [0, -HCH, 0],
     ]
     faceOffsets.forEach(([fx, fy, fz], i) => {
-      const g = new THREE.SphereGeometry(i === 0 ? 1.5 : 1.2, 6, 6)
+      const speakerRadius = Math.max(0.15, HC * (i === 0 ? 0.15 : 0.12))
+      const g = new THREE.SphereGeometry(speakerRadius, 6, 6)
       const m = new THREE.MeshBasicMaterial({ color: i === 0 ? C.blanc : C.wireDim, transparent: true, opacity: 0.4 })
       const mesh = new THREE.Mesh(g, m)
       mesh.position.set(fx, fy, fz)
@@ -187,7 +190,7 @@ export default function WireframeCube({
     })
 
     /* Rain */
-    const rainGeo = buildRain(half, RAIN_POOL)
+    const rainGeo = buildRain(half, RAIN_POOL, size)
     const _speeds    = rainGeo.attributes.speed.array
     const _offsets   = rainGeo.attributes.offset.array
     const _positions = rainGeo.attributes.position.array
@@ -216,7 +219,8 @@ export default function WireframeCube({
     const voiceGroup = new THREE.Group()
     voiceGroup.visible = false
     scene.add(voiceGroup)
-    const voiceGeo = new THREE.EdgesGeometry(new THREE.OctahedronGeometry(8))
+    const voiceMarkerSize = Math.max(0.3, HC * 0.8)
+    const voiceGeo = new THREE.EdgesGeometry(new THREE.OctahedronGeometry(voiceMarkerSize))
     const stemGeo  = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, -1, 0), // unitaire, scale.y = hauteur
     ])
@@ -350,7 +354,7 @@ export default function WireframeCube({
     const r = threeRef.current
     if (!r) return
     const { HC, HCH, headEdges, headDot } = r
-    const limit = half - HCH - 10
+    const limit = Math.max(0.1, half - HCH - half * 0.1)
     const pos = new THREE.Vector3(head.x * limit, head.y * limit, -head.z * limit)
     headEdges.position.copy(pos)
     headDot.position.copy(pos)
