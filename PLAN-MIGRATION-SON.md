@@ -5,12 +5,13 @@
 > **Stratégie retenue** : **fondations d'abord** — sécuriser déterminisme + échelle + verticalité avant d'empiler les couches.
 > **Règle d'or de la migration** : à la fin de **chaque** phase, l'application tourne, s'écoute, et la **boîte noire** reste verte (aucun événement de trace régressé). On ne casse jamais le diorama pour construire le champ.
 >
-> **Fiches de conception détaillées** (structures, pseudo-code, schémas, événements) :
+> **Fiches détaillées** (conception + **§10 Tâches d'exécution** : tâches atomiques `T-x`, ancrages `file:line`, valeurs résolues, un test mécanique chacune — applicables sans décision) :
+> [Phase 0 — Socle](./docs/migration/PHASE-0.md) ·
 > [Phase 1 — Couche 3](./docs/migration/PHASE-1.md) ·
 > [Phase 2 — Couche 2](./docs/migration/PHASE-2.md) ·
 > [Phase 3 — LOD & crossfades](./docs/migration/PHASE-3.md) ·
 > [Phase 4 — Threads, budgets & replay](./docs/migration/PHASE-4.md).
-> Ce fichier reste l'**index** : état des lieux, décisions, séquencement. Le détail par phase vit dans `docs/migration/`.
+> Ce fichier reste l'**index** : état des lieux, décisions, séquencement. Le détail et les tâches par phase vivent dans `docs/migration/`.
 
 ---
 
@@ -160,6 +161,8 @@ flowchart LR
 
 ## 5. Phase 0 — Socle transverse
 
+> 📄 **Conception + tâches d'exécution** : [`docs/migration/PHASE-0.md`](./docs/migration/PHASE-0.md)
+>
 > **But** : rendre le moteur **déterministe**, **paramétrable en échelle**, et corriger le **défaut de verticalité** — sans encore ajouter de couche. À la sortie, le diorama sonne *pareil ou mieux*, mais il est **rejouable** et **prêt à grandir**.
 
 ### 5.1 Livrables

@@ -169,3 +169,42 @@ Le bruit doit être **rejouable** (I4). Le worklet reçoit une **graine dérivé
 | **Bruit trop « blanc »/sifflant** | Calibrer pink vs brown + centre/largeur du passe-bande à l'oreille |
 | **Pulsation** si le niveau saute aux changements météo | Rampes (`rampVers`, ~80 ms), jamais de `setValueAtTime` brut |
 | **Worklet non chargé** (await module) | Charger `audioWorklet.addModule` avant `init`, garder un fallback silencieux tracé (`reject` raison `no-worklet`) |
+
+---
+
+## 10. Tâches d'exécution
+
+> Format : **T-x — Titre** · `chemin` (new) / `chemin:ligne` (edit) → *Action* / *Signatures* / *Dépend* / *Test*. Valeurs résolues ci-dessous (`// calibrable` = valeur de départ concrète).
+> **Valeurs résolues** : `niveauMax = -12 dBFS` · `niveauMaxMince = -18 dBFS` · rampe de niveau `80 ms` · mapping filtre (intensité `i` ∈ [0,1]) : `centreHz = 800 + 1700·i`, `largeurHz = 1500 + 3500·i` · coeffs pink = méthode de Paul Kellet (7 pôles).
+
+**T-1.1 — Worklet de bruit** · `ds/ui_kits/diorama/worklets/noise-processor.js` (new)
+- *Action* : `AudioWorkletProcessor` nommé `'noise-processor'`, génère pink (Kellet, coeffs §4.1) ou brown (intégrateur à fuite). État `b0..b6`/`brun` porté entre blocs. PRNG seedé reçu via `options.processorOptions.seed` (réimplémenter `mulberry32` dans le worklet — pas d'import cross-thread).
+- *Signatures* : `class NoiseProcessor extends AudioWorkletProcessor` ; `process(_, outputs)` remplit `outputs[0][0]`. `registerProcessor('noise-processor', NoiseProcessor)`.
+- *Dépend* : T-0.A1 (algo PRNG à recopier)
+- *Test* : nœud instancié → sortie non nulle, RMS stable ; deux `seed` égaux → même flux.
+
+**T-1.2 — Module `DiffuseBed`** · `ds/ui_kits/diorama/DiffuseBed.js` (new)
+- *Action* : construire le graphe `noise → BiquadFilter(bandpass) → GainNode → src soundfield Resonance`. Méthodes `setWeather(weather, weatherSv, rec)` (rampe niveau 80 ms, pose `frequency`/`Q = centre/largeur`, émet `bed`) et `setMince(on)` (bascule `niveauMax`).
+- *Signatures* : `export class DiffuseBed { constructor(ctx, scene, cfg, prng); setWeather(...); setMince(on) }` ; source via `scene.createSource({ soundfield: true })` (§16.1).
+- *Dépend* : T-1.1, T-0.B1
+- *Test* : `setWeather({intensité:1},...)` → `gain` ≈ `dbToLin(-12)` ; un event `bed` émis.
+
+**T-1.3 — Charger le worklet avant l'init** · `ds/ui_kits/diorama/RainSampler.js:208` (début de `init`)
+- *Action* : `await this.ctx.audioWorklet.addModule(new URL('./worklets/noise-processor.js', import.meta.url))` avant la création de la scène. Sur échec : `try/catch`, `bed` désactivé, `reject` raison `no-worklet`.
+- *Dépend* : T-1.1
+- *Test* : `init()` ne jette pas ; module listé dans `ctx.audioWorklet`.
+
+**T-1.4 — Instancier & brancher la nappe** · `ds/ui_kits/diorama/RainSampler.js:249` (fin de `init`)
+- *Action* : `this.bed = new DiffuseBed(this.ctx, this.scene, resolveBedConfig(this.cfg, this.bands), this.prng.fork())`. `resolveBedConfig` fixe `mince = (this.bands.collapse === 'diorama')`.
+- *Dépend* : T-1.2, T-0.E1
+- *Test* : après `init`, `getMasterLevel()` > -∞ avec pluie ON sans aucune voix busy (la nappe seule sonne).
+
+**T-1.5 — Pilotage météo** · `ds/ui_kits/diorama/RainSampler.js` (nouvelle méthode) + `DioramaApp.jsx:166` (effet deltas)
+- *Action* : `RainSampler.setWeather(weather)` délègue à `this.bed.setWeather(weather, this.recorder?.stateVersion, this.recorder)`. L'effet de deltas d'état (DioramaApp) appelle `sampler.setWeather({ intensité: state.rain ? state.density : 0, vent: state.windForce, dir: ... })` quand pluie/density/vent changent.
+- *Dépend* : T-1.4
+- *Test* : bouger `density` ⇒ events `bed` avec `niveau` croissant.
+
+**T-1.6 — Collapse diorama** · `ds/ui_kits/diorama/RainSampler.js` (dans `setScale`, T-0.F3)
+- *Action* : après recalcul des `bands`, appeler `this.bed?.setMince(this.bands.collapse === 'diorama')`.
+- *Dépend* : T-1.4, T-0.F3
+- *Test* : preset `diorama` ⇒ nappe en mode mince (`niveau ≤ -18 dB` à intensité 1).

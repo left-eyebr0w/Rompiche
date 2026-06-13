@@ -195,3 +195,57 @@ jq 'select(.type=="env" and .weak==true)' trace.ndjson | wc -l
 | **Coût de la coupe** (analyse RMS par voix) | Réutiliser les analysers existants ; ne couper que sous seuil franc |
 | **Latence ordre→rendu** (ring buffer) | Horodatage `at` des ordres + petite avance de planification |
 | **Régression de détermin­isme** introduite par une optim | Test « même seed ⇒ même trace » en garde de non-régression à chaque commit |
+
+---
+
+## 10. Tâches d'exécution
+
+> Format : **T-x — Titre** · `chemin` (new) / `chemin:ligne` (edit) → *Action* / *Signatures* / *Dépend* / *Test*.
+> **Valeurs résolues** : presets plateforme `mobile = {voicesL1:14, sectorsL2:4, order:1, sampleRate:48000}` · `desktop = {40, 8, 2, 48000}` · `vr = {64, 12, 3, 48000}` · `seuilWeakDb = -45 dBFS` (déjà dans `LayerConfig.L1`) · ring `capacity = 1024` ordres · lot fallback `postMessage = 64` ordres · compteurs audio→game à `30 Hz`.
+
+**T-4.1 — Ring buffer SPSC** · `ds/ui_kits/diorama/ringBuffer.js` (new)
+- *Action* : anneau mono-producteur/mono-consommateur sur `SharedArrayBuffer` si dispo (en-têtes COOP/COEP), sinon fallback `postMessage` par lots de 64. API `push(ordre)` (non bloquant, retourne `false` si plein) / `pop()` / `peekAt()`.
+- *Signatures* : `export function makeRing(capacity)` ; ordres encodés en champs numériques (`type`, `at`, `args[]`).
+- *Dépend* : —
+- *Test* : `push`×N puis `pop`×N rend l'ordre FIFO ; `push` sur plein → `false`.
+
+**T-4.2 — Détection plateforme & presets** · `ds/ui_kits/diorama/worldConfig.js`
+- *Action* : `detectPlatform()` → `'mobile'|'desktop'|'vr'` (UA + `XRSystem` si présent) ; `PLATFORM_PRESETS` (table ci-dessus) ; `makeWorldConfig` accepte `platform` et reporte `voicesL1/order/sectors` dans `layers`.
+- *Dépend* : T-0.B1
+- *Test* : `makeWorldConfig({preset:'field', platform:'mobile'}).layers.L1.voices === 14`.
+
+**T-4.3 — Pool & ordre dérivés du preset** · `ds/ui_kits/diorama/RainSampler.js:7,13`
+- *Action* : finaliser T-0.E2 — `POOL_SIZE`/`AMBISONIC_ORDER` proviennent de `cfg.layers.L1.voices` / `cfg.ambisonicOrder` (résolus par plateforme). Plus aucune const en dur.
+- *Dépend* : T-4.2, T-0.E2
+- *Test* : `poolStats().size` suit la plateforme ; `grep "POOL_SIZE = 48"` → vide.
+
+**T-4.4 — Bascule décision→message** · `ds/ui_kits/diorama/RainSampler.js`
+- *Action* : `trigger`/`setSector`/`setBed`/`setListener` produisent des **ordres** (`ring.push`) ; un consommateur côté audio (ou un adaptateur transitoire main-thread) applique les ordres horodatés. Étape transitoire admise : ring même thread d'abord, vrai worker ensuite.
+- *Dépend* : T-4.1
+- *Test* : aucun underrun worklet sous charge ; ordres appliqués dans l'ordre `at`.
+
+**T-4.5 — Compteurs audio→game** · `ds/ui_kits/diorama/RainSampler.js:413` (`poolStats`)
+- *Action* : publier `Compteurs{busy,steals,niveauMaster,sectorsActive}` à 30 Hz vers le game thread (remplace la lecture directe d'analysers cross-thread pour LOD/budget).
+- *Dépend* : T-4.4
+- *Test* : `LodController`/`ajusterBudget` consomment ces compteurs (plus d'accès direct au pool depuis la boucle React).
+
+**T-4.6 — Coupe des grains faibles** · `ds/ui_kits/diorama/RainSampler.js:342` (`traceSample`/boucle voix)
+- *Action* : quand `db < material.seuilWeakDb`, émettre `env{weak:true}` (T-0.F2) **puis** `pool.couperAvecFondu(v,0.005)` + `pool._release(v)`. Rend la voix au budget.
+- *Dépend* : T-0.F2
+- *Test* : `jq 'select(.type=="env" and .weak==true)' | wc -l` chute après activation ; `busy` baisse à densité égale.
+
+**T-4.7 — Culling par attention** · `ds/ui_kits/diorama/RainSampler.js` (`_lowestPriority`, T-0.E3)
+- *Action* : remplacer `attention = 1` par `attention = dansChampDeVision(v.pos, head, forward) ? 1 : 0.4 // calibrable`.
+- *Dépend* : T-0.E3
+- *Test* : une voix hors champ est volée avant une voix de même gain/dist dans le champ (events `steal.victim`).
+
+**T-4.8 — `ReplayEngine` (modes A & B)** · `ds/ui_kits/diorama/ReplayEngine.js` (new)
+- *Action* : `replayA(trace, engine)` planifie les ordres `trigger/sector/bed` à leur `at` ; `replayB(trace, engine)` recrée `makePrng(header.seed)`, rejoue la timeline `state/scale/weather` comme entrée et laisse le moteur re-tirer Poisson/sélection/LOD. UI debug : charger un `.ndjson` et lancer A ou B.
+- *Signatures* : `export class ReplayEngine { loadNDJSON(text); replayA(engine); replayB(engine) }`.
+- *Dépend* : T-0.F1 (seed au header), T-4.4
+- *Test* : **mode B** depuis une trace de référence ⇒ flux d'events `trigger` **identique** au live (toute divergence = régression, §14.5).
+
+**T-4.9 — Événement `budget`** · finalisation
+- *Action* : vérifier que `ajusterBudget` (T-3.5) émet `budget` à 1 Hz avec `sectorsActive` issu des compteurs (T-4.5).
+- *Dépend* : T-3.5, T-4.5
+- *Test* : `jq 'select(.type=="budget")' trace.ndjson` ≈ 1 ligne/s pendant l'écoute.

@@ -196,3 +196,42 @@ Point de conception clé : un worklet tourne sur l'**audio thread** et ne partag
 | **Périodicité** du round-robin | ≥ 8 variations/matériau (§16.5) + jitter pitch/gain seedé |
 | **Désync param** game→worklet (messages en retard) | Lissage (DECAY) côté débit ; le worklet tolère des params un peu vieux |
 | **Allocation dans `process`** (GC audio) | Grains pré-alloués (pool de grains dans le worklet), zéro `new` par bloc |
+
+---
+
+## 10. Tâches d'exécution
+
+> Format : **T-x — Titre** · `chemin` (new) / `chemin:ligne` (edit) → *Action* / *Signatures* / *Dépend* / *Test*.
+> **Valeurs résolues** : `N` par preset = `{ room:4, courtyard:8, field:12, diorama:0 }` · `RAYON_SECTEUR = (r1 + r2) / 2` · `contribution(impact) = +2 grains/s` plafonné à `débitMax = 120` · `DECAY = 0.85` par tick `update` (~30 Hz) · enveloppe de grain `30 ms` (attaque 3 ms / chute 27 ms) · passe-bas d'occlusion : coupure `= 18000 − 16500·occlusion` Hz · pool de grains worklet = `64` grains pré-alloués.
+
+**T-2.1 — Worklet granulateur** · `ds/ui_kits/diorama/worklets/granulator-processor.js` (new)
+- *Action* : `AudioWorkletProcessor` `'granulator-processor'`. Boucle de Poisson seedée (intervalles `−ln(prng())/débit`), pool de `64` grains pré-alloués (zéro `new` dans `process`), enveloppe 30 ms, round-robin matériau pondéré par `matMix`, jitter pitch/gain, passe-bas 1 pôle piloté par `occlusion`. Params reçus via `port.onmessage`. PRNG seedé via `processorOptions.seed`.
+- *Signatures* : cf. §4.1 (`process`, `lancerGrain`, `onmessage`). `registerProcessor('granulator-processor', …)`.
+- *Dépend* : T-0.A1, T-1.3 (mécanisme `addModule`)
+- *Test* : nœud instancié, `port.postMessage({débit:50,...})` → sortie granulaire ; même `seed` → même flux.
+
+**T-2.2 — `SectorField`** · `ds/ui_kits/diorama/SectorField.js` (new)
+- *Action* : `resolveSectorCount(cfg)` → `N` (table ci-dessus). Construire `N` secteurs : direction `dir(k) = (cos(2π k/N), 0, sin(2π k/N))`, worklet + `scene.createSource()` posée à `dir·RAYON_SECTEUR`. Méthodes `absorberImpact(pos, material, head)`, `update(terrain, head, rec)` (§4.2).
+- *Signatures* : `export class SectorField { constructor(ctx, scene, cfg, bands, prng); absorberImpact(...); update(...); get actif() }`.
+- *Dépend* : T-2.1, T-0.B2
+- *Test* : `resolveSectorCount(roomCfg) === 4` ; `field` → 12 sources créées ; `diorama` → `actif === false`.
+
+**T-2.3 — Instancier dans `RainSampler`** · `ds/ui_kits/diorama/RainSampler.js:249` (fin `init`)
+- *Action* : `this.sectors = new SectorField(this.ctx, this.scene, this.cfg, this.bands, this.prng.fork())` (après la nappe T-1.4).
+- *Dépend* : T-2.2
+- *Test* : `init` OK ; `this.sectors.actif` cohérent avec le preset.
+
+**T-2.4 — Routage par distance** · `ds/ui_kits/diorama/RainSampler.js:331` (dans `trigger`, après calcul `pos`)
+- *Action* : remplacer l'appel direct `this.pool.play(...)` par un branchement : `dist = distance(pos, this._headWorld)` ; si `dist < r1 - overlap` → `pool.play(...)` (existant) ; sinon si `this.sectors.actif && dist < r2` → `this.sectors.absorberImpact(pos, material, this._headWorld)` (pas de voix héros) ; sinon (au-delà de `r2`) → rien (la nappe porte la masse).
+- *Dépend* : T-2.3, T-0.E4
+- *Test* : éloigner l'auditeur d'un impact → `busy` du pool n'augmente plus, mais le `débit` du secteur correspondant monte (event `sector`).
+
+**T-2.5 — Boucle `update` ~30 Hz** · `ds/ui_kits/diorama/DioramaApp.jsx:182` (à côté de la boucle de trace)
+- *Action* : RAF 1 frame/2 appelant `sampler.sectors?.update(terrain, headWorld, recorder)`. Tourne dès que l'écoute est active (pas seulement en enregistrement).
+- *Dépend* : T-2.4
+- *Test* : events `sector` émis à ~30 Hz pendant l'écoute ; `débit` retombe (DECAY) quand on cesse d'alimenter un secteur.
+
+**T-2.6 — Modulation géométrique** · `ds/ui_kits/diorama/SectorField.js` (helpers) + `Terrain.js`
+- *Action* : `occlusionLocale(terrain, head, dir)` (raycast court → 0..1) et `couvertureMatériau(terrain, head, dir)` (échantillonnage le long de `dir` → `matMix`). Au minimum viable : `occlusion = 0`, `matMix` = matériau dominant du secteur. Affiner ensuite.
+- *Dépend* : T-2.5
+- *Test* : un secteur pointant vers le bloc surélevé (relief T-0.D1) → `occlusion > 0` dans l'event `sector`.
