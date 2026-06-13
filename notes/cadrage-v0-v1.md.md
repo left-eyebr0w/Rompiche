@@ -1,7 +1,7 @@
 # Rompiche — Document de cadrage v0 → v1
 
 **Dernière mise à jour** : 13 juin 2026
-**Statut** : référence active
+**Statut** : ✅ v0 VALIDÉE — 5/5 critères DoD acquis (13 juin 2026)
 **Auteur** : projet solo, artistique, destiné à être rendu public
 
 ---
@@ -69,46 +69,43 @@ ni les tests :
 
 La v0 est considérée comme **stabilisée** quand :
 
-- [ ] **Tests garde-fous** Playwright capturent le comportement actuel :
+- [x] **Tests garde-fous** Playwright capturent le comportement actuel :
       le son sort, la position auditeur bouge le champ sonore, les toggles de surface
       agissent, les 3 couches produisent du signal.
-- [ ] **Bug du sol-herbe corrigé** : désactiver metal ET bache ne produit plus un silence
-      total incohérent. Le comportement attendu est défini et testé (voir §6).
-- [ ] **Cohérence du vocabulaire** : `terre` partout dans le code.
-- [ ] Le **modèle de données** est typé (TypeScript) et documenté comme contrat.
-- [ ] Aucune régression du comportement audio validé manuellement en v0.
+- [x] **Bug du sol-herbe corrigé** : désactiver metal ET bache ne produit plus un silence
+      total. Fallback intelligent : les cellules désactivées deviennent candidates `terre`.
+      (Voir [etat-v0.md:5.4](etat-v0.md#54-cas-observé--quand-metalfalse-et-bachefalse).)
+- [x] **Cohérence du vocabulaire** : `terre` partout dans le code.
+- [x] Le **modèle de données** est typé (TypeScript) et documenté comme contrat.
+      (`ds/ui_kits/diorama/types/` : 7 fichiers `.d.ts`, point d'entrée `index.d.ts`.)
+- [x] Aucune régression du comportement audio validé manuellement en v0.
+      (Tests Playwright : 4/4 ✅ audio-output, layers-signal, listener-position, surface-toggles.)
 
 ---
 
 ## 5. Périmètre v1
 
-La v1 transforme le proto en **base de jeu extensible**, **en restant en wireframe /
-visuel simple** (pas de polish visuel — repoussé en v2).
-
-Chantiers v1, **dans l'ordre** :
-
-1. **Tests garde-fous** (filet comportemental) — *avant* tout refactoring.
-2. **Migration TypeScript progressive** :
-   - *TS-A* : `tsconfig` permissif (`allowJs: true`), typage prioritaire du **modèle de
-     données** (state, terrain, materials, objects, coords).
-   - *TS-B* : migration du reste, durcissement vers `strict`.
-3. **Modèle de monde sérialisable** (pivot) + **fix du sol-herbe**.
-4. **Refonte UI / contrôles**.
-
-Objectif transversal : **cohérence interne forte**, élimination des désharmonisations.
+> ⚠️ **Section obsolète — déplacée.** Le périmètre v1 a été tranché et unifié dans un
+> document dédié : **[cadrage-v1.md](cadrage-v1.md)**. Ce fichier-ci ne fait plus autorité
+> que pour la **v0**. Voir le nouveau document pour : le principe directeur (le « Pivot »),
+> les paliers ordonnés P0→P4+, l'interface Monde↔Audio à figer, le format de save versionné
+> et la DoD v1.
 
 ---
 
-## 6. Bug connu — sol-herbe (à corriger en v1, chantier 3)
+## 6. Bug connu — sol-herbe (RÉSOLU en v0)
 
-**Constat factuel (cf. etat-v0.md §4.3, §5.4, §10.2)** :
-- Le terrain par défaut ne contient que `metal` + `bache` ; **aucune cellule `terre`**.
-- Les toggles de surface **coupent le débit Poisson** au lieu de **remplacer le matériau**.
-- Conséquence : metal=false ET bache=false → `terre` a 0 point exposé → **silence total**.
+**Constat initial (cf. etat-v0.md §4.3, §5.4, §10.2)** :
+- Le terrain par défaut ne contient que `metal` + `bache` ; aucune cellule `terre`.
+- Les toggles de surface coupaient juste le débit Poisson, sans fallback.
+- Symptôme : metal=false ET bache=false → silence total.
 
-**Décision de comportement attendu** : *à trancher lors du chantier 3* (deux options
-ouvertes : (a) un vrai sol `terre` sous-jacent qui sonne par défaut ; (b) une autre
-sémantique). Documenté ici comme question ouverte, à résoudre avec test associé.
+**Solution appliquée** : Fallback intelligent dans `pickImpact()` [BakedSet.js:66-70](../ds/ui_kits/diorama/BakedSet.js#L66-L70).
+Quand surface='terre', on accepte :
+- Les cellules vraiment `terre`, ET/OU
+- Les cellules des matériaux désactivés (surfaceDensities ≤ 0)
+
+**Comportement actuel** : Désactiver metal ET bache → leurs cellules reviennent au bassin terre → pas de silence.
 
 ---
 

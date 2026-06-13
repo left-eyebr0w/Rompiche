@@ -422,23 +422,23 @@ for (const m of MATERIALS) {
 
 **Attendu** : Pas de son metal/bache, mais son de terre (puisque `terre: 1`).
 
-**Observé (selon notes utilisateur)** : Aucun son d'herbe.
+**Résolu en v0** (§6 corrigé) : Logique de fallback intelligent dans `pickImpact()`.
 
-**Raison factuellement observée** :
+Quand surface='terre', le filtre accepte désormais :
+1. Les cellules vraiment marquées `matériau='terre'`, OU
+2. Les cellules d'autres matériaux **actuellement désactivés** (surfaceDensities ≤ 0)
 
-1. Le terrain par défaut ne contient QUE metal et bache (voir [Terrain.js:72](ds/ui_kits/diorama/Terrain.js#L72))
-2. Aucune cellule ne porte `matériau='terre'`
-3. Quand `tickPoisson()` est appelé avec `surfaceDensities.terre=1`, le code va :
-   ```javascript
-   const exposed = this.baked.points.filter(p.matériau === 'terre').length
-   // → 0, car aucun point de baked n'a matériau='terre'
-   ```
-4. `exposed=0` → pas d'impacts générés pour 'terre'
-5. Aucun son pour aucune surface
+Voir [BakedSet.js:66-70](ds/ui_kits/diorama/BakedSet.js#L66-L70) :
+```javascript
+if (surface === 'terre') {
+  candidates = bakedSet.points.filter(p => {
+    if (p.matériau === 'terre') return true
+    return (surfaceDensities[p.matériau] ?? 1) <= 0  // ← fallback
+  })
+}
+```
 
-**Pas de fallback** : Le système sonore ne redéfinit pas dynamiquement le matériau d'une cellule selon les toggles. Il utilise les matériaux BAKED du terrain. Désactiver une surface ne la remplace pas par terre ; ça coupe juste le débit Poisson pour ce matériau.
-
-**Symptôme** : Silence total quand les deux sont désactivés, au lieu d'un "sol par défaut" sonifié.
+**Comportement actuel** : Quand metal=false ET bache=false, leurs cellules reviennent au bassin terre → impact joué comme 'terre'. Le débit Poisson global pour `terre` continue (jamais coupé), et trouve des candidates. Cohérent et sans silence.
 
 ---
 
@@ -595,9 +595,10 @@ Voir [RainSampler.js:546-557](ds/ui_kits/diorama/RainSampler.js#L546-L557), [564
 
 Aucun schéma centralisé (ex. Protocol Buffers, JSON Schema) ne décrit « la structure du monde sérialisable ». Le système dépend d'accesseurs React + manually paired Uint8Arrays.
 
-### 10.2 Fallback terrain : pas de valeur par défaut
+### 10.2 Fallback terrain : RÉSOLU
 
-**Observation** : Quand une surface (metal/bache) est coupée, il n'existe pas de « matériau par défaut » sur lequel tomber. Les toggles coupent le débit Poisson, pas ne remplacent le matériau du terrain. C'est une incohérence : le rendu peut masquer un bloc, mais le terrain porte toujours metal/bache, jamais terre.
+**Avant** : Aucun fallback. Les toggles coupaient juste le débit Poisson.  
+**Maintenant** : `pickImpact()` fait un fallback sémantique : si metal/bache sont désactivés, leurs cellules deviennent candidates pour `terre`. Voir §5.4.
 
 ### 10.3 Couplage serré audio ↔ terrain
 
@@ -686,14 +687,14 @@ Rompiche v0 est un **moteur hybryde à trois couches**:
 - **Synchronisation** : Auditeur React ↔ RainSampler via refs + effects
 - **Découpling léger** : L'impact visuel et l'impact audio lisent séparément les matériaux du terrain
 
-### Problème v0 identifié
+### Problème v0 (RÉSOLU)
 
-Quand les deux surfaces (metal, bache) sont désactivées, aucun son car :
-- Terrain par défaut = 100% metal + bache
-- Aucune cellule 'terre' existante
-- Coupe du débit Poisson n'est pas remplacée par fallback
+Bug du sol-herbe : quand metal ET bache désactivés.  
+**Solution** : Fallback dans `pickImpact()` — les cellules désactivées reviennent à `terre`.  
+Voir §5.4 et §6 pour détails.
 
 ---
 
 **Document généré** : 13 juin 2026  
-**Scope** : Reconnaissance v0 — pas de solutions proposées, pas de modifications
+**Mise à jour** : 13 juin 2026 — bug sol-herbe corrigé, fallback appliqué  
+**Scope** : Reconnaissance v0 + suivi des corrections
