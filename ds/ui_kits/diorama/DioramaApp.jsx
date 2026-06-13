@@ -113,6 +113,13 @@ export default function DioramaApp() {
     if (state.listening) initSampler()
   }, [state.listening, initSampler])
 
+  /* T-1.5b — Mise à jour d'échelle quand preset ou seed change.
+     Recalcule les bandes (r1/r2) et bascule la nappe en mode mince si diorama. */
+  React.useEffect(() => {
+    const s = samplerRef.current
+    if (s?.ready) s.setScale(worldCfg)
+  }, [worldCfg])
+
   /* Callback visuel uniquement — plus de déclenchement audio ici (T-0.H1).
      L'audio est piloté par tickPoisson dans la boucle RAF dédiée. */
   const handleImpact = React.useCallback((_surface, _pos) => {
