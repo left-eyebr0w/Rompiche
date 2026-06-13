@@ -1,4 +1,6 @@
-/** État React centralisé du diorama (DioramaApp.jsx). */
+/* État React centralisé du diorama (DioramaApp.jsx).
+   Module purement typé : aucune valeur à l'exécution. Source de vérité des
+   énumérations de configuration partagées (Preset, Platform…). */
 
 export type Preset = 'diorama' | 'room' | 'courtyard' | 'field'
 export type Platform = 'mobile' | 'desktop' | 'vr'

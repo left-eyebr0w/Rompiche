@@ -1,22 +1,40 @@
 /* ── Points d'impact bakés (§5.2, §15.2) ─────────────────────────────────────
    Précalcule une fois les positions/matériaux/normales/exposition de toutes les
    cellules du terrain. Évite de faire un cellAt() à chaque goutte de Poisson.
-   Structure : { points:[PointImpact], index:Map<clé→indices> } */
+   Structure : { points:[ImpactPoint], index:Map<clé→indices> } */
 
-function cellKey(col, row, cols) {
+import type { Terrain } from './Terrain.js'
+import type { Coords, Vector3 } from './coords.js'
+import type { MaterialId } from './materials.js'
+
+export interface ImpactPoint {
+  position: Vector3
+  normale: Vector3
+  matériau: MaterialId
+  expoCiel: number
+}
+
+export interface BakedSet {
+  points: ImpactPoint[]
+  index: Map<number, number[]>
+}
+
+interface Prng { aléa(): number }
+
+function cellKey(col: number, row: number, cols: number): number {
   return row * cols + col
 }
 
-/* Bake toutes les cellules fines en PointImpact. Pour chaque cellule :
+/* Bake toutes les cellules fines en ImpactPoint. Pour chaque cellule :
    - position = centre (cx, ground + hauteur_monde, cz)
    - normale  = (0,1,0) — toit plat (la hauteur est déjà incluse dans y)
    - expoCiel = 0 si une cellule-bloc voisine (4-connexe) est plus haute d'au
      moins 1 bloc (cellule sous abri), sinon 1. */
-export function bakeImpactPoints(terrain, coords) {
+export function bakeImpactPoints(terrain: Terrain, coords: Coords): BakedSet {
   const { size, CELL, ground } = coords
   const half = size / 2
-  const points = []
-  const index = new Map() // clé → [indices dans points]
+  const points: ImpactPoint[] = []
+  const index = new Map<number, number[]>() // clé → [indices dans points]
 
   for (let row = 0; row < terrain.rows; row++) {
     for (let col = 0; col < terrain.cols; col++) {
@@ -31,7 +49,7 @@ export function bakeImpactPoints(terrain, coords) {
       /* Exposition ciel : cherche si un bloc voisin est plus haut d'au moins 1 m */
       const myBlocks = hMonde / terrain.block
       let abrité = false
-      const neighbors = [[-1,0],[1,0],[0,-1],[0,1]]
+      const neighbors = [[-1, 0], [1, 0], [0, -1], [0, 1]]
       for (const [dc, dr] of neighbors) {
         const nc = col + dc, nr = row + dr
         const ncx = (nc + 0.5) * CELL - half
@@ -40,7 +58,7 @@ export function bakeImpactPoints(terrain, coords) {
         if (nc2 && nc2.height / terrain.block >= myBlocks + 1) { abrité = true; break }
       }
 
-      const pt = {
+      const pt: ImpactPoint = {
         position: { x: cx, y, z: cz },
         normale:  { x: 0, y: 1, z: 0 },
         matériau: cell.material.id,
@@ -50,7 +68,7 @@ export function bakeImpactPoints(terrain, coords) {
       const idx = points.length
       points.push(pt)
       if (!index.has(key)) index.set(key, [])
-      index.get(key).push(idx)
+      index.get(key)!.push(idx)
     }
   }
 
@@ -61,15 +79,21 @@ export function bakeImpactPoints(terrain, coords) {
    Filtre par surface, pondère par proximité à la tête (gaussienne). Retourne null si aucun point.
    surfaceDensities : quand fourni, 'terre' peut aussi piocher dans les points dont le matériau
    est désactivé (sol sous un objet retiré de la scène). */
-export function pickImpact(bakedSet, surface, prng, head, surfaceDensities = {}) {
-  let candidates
+export function pickImpact(
+  points: ReadonlyArray<ImpactPoint>,
+  surface: MaterialId,
+  prng: Prng,
+  head: Vector3 | null,
+  surfaceDensities: Partial<Record<MaterialId, number>> = {},
+): ImpactPoint | null {
+  let candidates: ImpactPoint[]
   if (surface === 'terre') {
-    candidates = bakedSet.points.filter(p => {
+    candidates = points.filter(p => {
       if (p.matériau === 'terre') return true
       return (surfaceDensities[p.matériau] ?? 1) <= 0
     })
   } else {
-    candidates = bakedSet.points.filter(p => p.matériau === surface)
+    candidates = points.filter(p => p.matériau === surface)
   }
   if (!candidates.length) return null
 

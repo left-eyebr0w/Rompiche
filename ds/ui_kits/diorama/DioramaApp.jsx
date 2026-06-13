@@ -8,6 +8,8 @@ import { makeCoords } from './coords.js'
 import { makeDefaultTerrain } from './Terrain.js'
 import { makeDefaultObjects } from './objects.js'
 import { makeWorldConfig } from './worldConfig.js'
+import { serializeWorld, deserializeWorld, putSave, getSave, listSaves, deleteSave } from './save.js'
+import { MATERIALS } from './materials.js'
 import { isDebugEnabled, installDebugApi, registerDebugSampler } from './debug.js'
 
 const SEGMENTS = ['aube', 'jour', 'crépuscule', 'nuit']
@@ -143,6 +145,24 @@ export default function DioramaApp() {
     const s = samplerRef.current
     if (s?.ready) s.setScale(worldCfg)
   }, [worldCfg])
+
+  /* ── Save / Load (WorldSave versionné, IndexedDB slots nommés) ────────────
+     La pluie est déterministe (seed) : restaurer l'état + le terrain suffit à
+     reproduire la scène. Le terrain passe par sampler.setTerrain → rebake du
+     FlatWorld (forward-compatible avec l'édition de terrain en P2). */
+  const handleSave = React.useCallback(async (name) => {
+    const save = serializeWorld(name, stateRef.current, terrainRef.current, objectsRef.current, MATERIALS.map(m => m.id))
+    await putSave(name, save)
+  }, [])
+
+  const handleLoad = React.useCallback(async (name) => {
+    const raw = await getSave(name)
+    if (!raw) return
+    const { statePatch, terrain } = deserializeWorld(raw)
+    terrainRef.current = terrain
+    samplerRef.current?.setTerrain(terrain)
+    set(statePatch)
+  }, [])
 
   /* Callback visuel uniquement — plus de déclenchement audio ici (T-0.H1).
      L'audio est piloté par tickPoisson dans la boucle RAF dédiée. */
@@ -411,7 +431,8 @@ export default function DioramaApp() {
           <div><b>Ctrl+Alt+D</b> panneau debug · <b>Ctrl+Alt+R</b> enregistrer la trace</div>
         </div>
       </div>
-      <ControlHUD state={state} set={set} segments={SEGMENTS} clock={clock} clockMode={state.clockMode} />
+      <ControlHUD state={state} set={set} segments={SEGMENTS} clock={clock} clockMode={state.clockMode}
+        onSaveWorld={handleSave} onLoadWorld={handleLoad} listSaves={listSaves} deleteSave={deleteSave} />
     </div>
   )
 }

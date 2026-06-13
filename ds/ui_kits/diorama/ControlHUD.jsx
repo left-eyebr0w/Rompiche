@@ -51,10 +51,55 @@ function Icon({ name, size = 16 }) {
   return <span className="ic" ref={ref} />
 }
 
+function SavesSection({ Button, Eyebrow, onSaveWorld, onLoadWorld, listSaves, deleteSave }) {
+  const [name, setName] = React.useState('')
+  const [slots, setSlots] = React.useState([])
+  const refresh = React.useCallback(() => { listSaves().then(setSlots).catch(() => {}) }, [listSaves])
+  React.useEffect(() => { refresh() }, [refresh])
+
+  const doSave = async () => {
+    const n = name.trim()
+    if (!n) return
+    await onSaveWorld(n)
+    setName('')
+    refresh()
+  }
+  const doDelete = async (n) => { await deleteSave(n); refresh() }
+
+  const inputStyle = {
+    flex: 1, padding: '8px 12px', borderRadius: '4px', border: '1px solid var(--on-ink-border)',
+    background: 'transparent', color: 'var(--on-ink-primary)', fontFamily: 'var(--font-mono)', fontSize: '12px',
+  }
+
+  return (
+    <section className="hud__sec">
+      <div className="hud__sech"><Icon name="save" /><Eyebrow tone="inverse">Sauvegardes</Eyebrow></div>
+      <div className="hud__stack">
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <input data-testid="save-name" placeholder="Nom de la scène" value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') doSave() }} style={inputStyle} />
+          <Button inverse onClick={doSave} data-testid="save-btn">Enregistrer</Button>
+        </div>
+        {slots.length === 0
+          ? <div className="hud__note">Aucune sauvegarde.</div>
+          : slots.map(n => (
+            <div key={n} data-testid={`slot-${n}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--on-ink-secondary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n}</span>
+              <Button inverse onClick={() => onLoadWorld(n)} data-testid={`load-${n}`}>Charger</Button>
+              <Button inverse onClick={() => doDelete(n)} data-testid={`del-${n}`}>✕</Button>
+            </div>
+          ))}
+      </div>
+    </section>
+  )
+}
+
 export default function ControlHUD(props) {
   const DS = window.DioramaSonoreDesignSystem_6d9bc4
   const { Switch, Slider, Button, Tag, Eyebrow } = DS
-  const { state, set, segments, clock, clockMode } = props
+  const { state, set, segments, clock, clockMode,
+    onSaveWorld, onLoadWorld, listSaves, deleteSave } = props
 
   return (
     <aside className="hud">
@@ -147,6 +192,9 @@ export default function ControlHUD(props) {
               value={state.density} disabled={!state.rain} formatValue={v => v.toFixed(2)} onChange={e => set({ density: parseFloat(e.target.value) })} />
           </div>
         </section>
+
+        <SavesSection Button={Button} Eyebrow={Eyebrow}
+          onSaveWorld={onSaveWorld} onLoadWorld={onLoadWorld} listSaves={listSaves} deleteSave={deleteSave} />
       </div>
     </aside>
   )

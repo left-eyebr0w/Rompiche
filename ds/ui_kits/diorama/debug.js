@@ -138,9 +138,9 @@ export function installDebugApi({ getRecorder } = {}) {
   function scene() {
     /* Les « surfaces actives » ne sont PAS la couche props (vide par défaut) :
        ce sont les matériaux réellement présents dans le terrain baké du moteur
-       (sampler.baked.points). On regroupe par matériau et on dérive les bounds
+       via l'interface WorldQuery. On regroupe par matériau et on dérive les bounds
        monde (AABB) des points d'impact de ce matériau. */
-    const points = _sampler?.baked?.points ?? []
+    const points = _sampler?.world?.impactPoints() ?? []
     const byMat = new Map()
     for (const p of points) {
       const id = p.matériau

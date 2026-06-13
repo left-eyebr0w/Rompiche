@@ -18,6 +18,7 @@
   "scripts": {
     "stop": "pkill -f 'vite --port 5175'",
     "start": "npx vite",
+    "type-check": "tsc --noEmit",
     "test": "playwright test",
     "test:headed": "playwright test --headed"
   }

@@ -3,7 +3,7 @@ import { MATERIALS, materialById } from './materials.js'
 import { makeCoords, headInputToWorld, worldToResonance, LISTENER_FORWARD, HEAD_FACES } from './coords.js'
 import { makePrng } from './prng.js'
 import { makeWorldConfig, résoudreCouches } from './worldConfig.js'
-import { bakeImpactPoints, pickImpact } from './BakedSet.js'
+import { pickImpact } from './BakedSet.js'
 import { makeDefaultWorld } from './World.js'
 import { DiffuseBed, resolveBedConfig } from './DiffuseBed.js'
 import { SectorField } from './SectorField.js'
@@ -211,8 +211,7 @@ export class RainSampler {
     this.pool   = null
     this.prng   = makePrng(worldCfg.seed)
     this.bands  = résoudreCouches(this.coords.worldRadius, worldCfg)
-    this.baked  = null // posé par setTerrain() avant init()
-    this.world  = null // posé par setTerrain() après baking
+    this.world  = null // posé par setTerrain() — seule porte vers le terrain (WorldQuery)
     this._terrain = null // référence au terrain pour reconstruire le monde
     this._intensity = 0 // mis à jour par setWeather()
     this.reservoirs    = new Map()
@@ -234,7 +233,8 @@ export class RainSampler {
 
   setTerrain(terrain) {
     this._terrain = terrain
-    this.baked = bakeImpactPoints(terrain, this.coords)
+    /* Le monde (FlatWorld) bake ses points d'impact en interne. Le sampler ne
+       touche jamais au terrain en direct : il interroge this.world (WorldQuery). */
     this.world = makeDefaultWorld({ terrain, coords: this.coords })
   }
 
@@ -450,8 +450,11 @@ export class RainSampler {
      surfaceDensities = { metal, bache, terre } : activité de chaque surface (0 ou 1).
      density = multiplicateur global (0..1) depuis l'UI. */
   tickPoisson(dtMs, surfaceDensities, density = 1) {
-    if (!this.ready || !this.baked || this.ctx?.state === 'suspended') return
+    if (!this.ready || !this.world || this.ctx?.state === 'suspended') return
     const rec = this.recorder
+
+    /* Seule lecture du monde, via l'interface WorldQuery (jamais terrain.material). */
+    const pts = this.world.impactPoints()
 
     for (const m of MATERIALS) {
       const sid = m.id
@@ -464,13 +467,13 @@ export class RainSampler {
          (le sol sous un objet retiré de la scène redevient terre). */
       let exposed
       if (sid === 'terre') {
-        exposed = this.baked.points.filter(p => {
+        exposed = pts.filter(p => {
           if (p.expoCiel <= 0) return false
           if (p.matériau === 'terre') return true
           return (surfaceDensities[p.matériau] ?? 1) <= 0
         }).length
       } else {
-        exposed = this.baked.points.filter(p => p.matériau === sid && p.expoCiel > 0).length
+        exposed = pts.filter(p => p.matériau === sid && p.expoCiel > 0).length
       }
       if (!exposed) continue
 
@@ -486,7 +489,7 @@ export class RainSampler {
         const u = Math.max(1e-9, this.prng.aléa())
         this._poissonNext[sid] = -Math.log(u) / λ
 
-        const point = pickImpact(this.baked, sid, this.prng, this._headWorld, surfaceDensities)
+        const point = pickImpact(pts, sid, this.prng, this._headWorld, surfaceDensities)
         if (!point) continue
 
         const impactId = rec?.recording ? rec.nextImpactId() : 0
