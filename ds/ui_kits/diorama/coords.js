@@ -44,3 +44,16 @@ export function worldToResonance({ x, y, z }) {
    gauche/droite/devant sont ancrés au monde, pas à l'écran.
    Avant = −Z monde (convention Resonance par défaut), haut = +Y. */
 export const LISTENER_FORWARD = { x: 0, y: 0, z: -1 }
+
+/* Les 6 faces de la tête = les 6 points d'écoute directionnels (normales monde).
+   Source UNIQUE partagée par le rendu (RainSampler projette les voix dessus pour
+   le traçage) et le DebugHUD (barres live). Chaque face est une « piste » : la
+   même session se relit comme 6 timelines, une par direction d'écoute. */
+export const HEAD_FACES = [
+  { label: 'FRONT', n: [0,  0, -1] }, // avant  (−Z monde)
+  { label: 'BACK',  n: [0,  0,  1] }, // arrière (+Z monde)
+  { label: 'DROIT', n: [1,  0,  0] }, // droite (+X monde)
+  { label: 'GAUCH', n: [-1, 0,  0] }, // gauche (−X monde)
+  { label: 'HAUT',  n: [0,  1,  0] }, // haut   (+Y monde)
+  { label: 'BAS',   n: [0, -1,  0] }, // bas    (−Y monde)
+]

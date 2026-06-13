@@ -3,6 +3,7 @@ import WireframeCube from './WireframeCube.jsx'
 import ControlHUD from './ControlHUD.jsx'
 import DebugHUD from './DebugHUD.jsx'
 import { RainSampler } from './RainSampler.js'
+import { TraceRecorder } from './TraceRecorder.js'
 import { makeCoords } from './coords.js'
 import { makeDefaultTerrain } from './Terrain.js'
 
@@ -72,11 +73,22 @@ export default function DioramaApp() {
   gainRef.current  = state.gain
   const headRef    = React.useRef({ x: state.x, y: state.y, z: state.z })
   headRef.current  = { x: state.x, y: state.y, z: state.z }
+  const stateRef   = React.useRef(state)
+  stateRef.current = state
+
+  /* ── Boîte noire (traçage causal) ─────────────────────────
+     Recorder persistant, branché au sampler dès l'init. Inerte tant qu'on
+     n'enregistre pas (Ctrl+Alt+R ou bouton du DebugHUD). */
+  const recRef = React.useRef(null)
+  if (!recRef.current) recRef.current = new TraceRecorder()
+  const [recording, setRecording] = React.useState(false)
+  const [traceCount, setTraceCount] = React.useState(0)
 
   const initSampler = React.useCallback(async () => {
     if (samplerRef.current) { samplerRef.current.resume(); return }
     const s = new RainSampler(SIZE)
     await s.init()
+    s.setRecorder(recRef.current)
     samplerRef.current = s
     /* Positionne l'auditeur dès l'init — le useEffect ci-dessous tourne trop tôt (avant async).
        L'orientation est fixe (posée dans RainSampler.init) : elle ne suit pas l'orbite caméra. */
@@ -91,11 +103,23 @@ export default function DioramaApp() {
   const handleImpact = React.useCallback((surface, pos) => {
     const s = samplerRef.current
     if (!s?.ready) return
+    /* Maillon racine de la chaîne causale : on frappe l'id ICI (au plus près de
+       la cause physique) et on le propage au trigger, qui le porte jusqu'à la
+       voix et l'enveloppe. `impact` = 0 quand on n'enregistre pas (coût nul). */
+    const rec = recRef.current
+    const impactId = rec.recording ? rec.nextImpactId() : 0
+    if (impactId) {
+      rec.emit('impact', {
+        impact: impactId, surface,
+        x: Math.round(pos?.x ?? 0), z: Math.round(pos?.z ?? 0),
+      })
+    }
     s.trigger(surface, {
       x: pos?.x ?? 0,
       z: pos?.z ?? 0,
       gainDb: gainRef.current,
       detune: (Math.random() - 0.5) * 40,
+      impactId,
     })
   }, [])
 
@@ -107,6 +131,69 @@ export default function DioramaApp() {
   /* L'orientation de l'auditeur est FIXE (posée à l'init) : orbiter la vue
      (spin) déplace le point de vue, pas l'écoute. La tête est l'input de
      référence et reste fixe → le champ sonore reste ancré au monde. */
+
+  /* ── Pilotage de la boîte noire ───────────────────────────
+     Champs d'état suivis en delta (journalisés au changement, jamais dupliqués
+     sur chaque goutte). Le snapshot initial à l'ouverture pose la version 1. */
+  const TRACKED = ['rain', 'wind', 'windTilt', 'windRotation', 'windForce',
+    'metal', 'bache', 'x', 'y', 'z', 'density', 'gain']
+  const snapshot = (st) => Object.fromEntries(TRACKED.map(k => [k, st[k]]))
+  const trackedRef = React.useRef(null)
+
+  const toggleRecording = React.useCallback(() => {
+    const rec = recRef.current
+    const s = samplerRef.current
+    if (rec.recording) {
+      rec.stop()
+      setRecording(false)
+      setTraceCount(rec.count)
+      trackedRef.current = null
+      return
+    }
+    if (!s?.ready) return // pas d'écoute active → rien à tracer
+    rec.start(s.ctx, { size: SIZE })
+    const snap = snapshot(stateRef.current)
+    rec.state(snap)              // version 1 = état complet du monde
+    trackedRef.current = snap    // amorce le diff des deltas
+    setTraceCount(rec.count)
+    setRecording(true)
+  }, [])
+
+  const exportTrace = React.useCallback(() => recRef.current.download(), [])
+
+  /* Deltas d'état : n'émet QUE les champs qui ont changé depuis le dernier
+     point de référence, avec un nouveau numéro de version. */
+  React.useEffect(() => {
+    const rec = recRef.current
+    if (!rec.recording || !trackedRef.current) return
+    const cur = snapshot(stateRef.current)
+    const prev = trackedRef.current
+    const patch = {}
+    for (const k of TRACKED) if (cur[k] !== prev[k]) patch[k] = cur[k]
+    if (Object.keys(patch).length) {
+      rec.state(patch)
+      trackedRef.current = cur
+    }
+  }, [state.rain, state.wind, state.windTilt, state.windRotation, state.windForce,
+      state.metal, state.bache, state.x, state.y, state.z, state.density, state.gain, recording])
+
+  /* Boucle d'échantillonnage des 6 pistes (~30 Hz, 1 frame sur 2). Autonome :
+     tourne tant qu'on enregistre, que le DebugHUD soit ouvert ou non. */
+  React.useEffect(() => {
+    if (!recording) return
+    let frame = 0, rafId
+    const loop = () => {
+      rafId = requestAnimationFrame(loop)
+      if (++frame % 2 !== 0) return
+      const s = samplerRef.current
+      const rec = recRef.current
+      if (!s?.ready || !rec.recording) return
+      s.traceSample(rec)
+      setTraceCount(rec.count)
+    }
+    rafId = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(rafId)
+  }, [recording])
 
   /* drag orbit — Y axis only */
   const drag = React.useRef({ active: false, lastX: 0 })
@@ -129,10 +216,14 @@ export default function DioramaApp() {
         e.preventDefault()
         setState(s => ({ ...s, debug: !s.debug }))
       }
+      if (e.ctrlKey && e.altKey && e.code === 'KeyR') {
+        e.preventDefault()
+        toggleRecording()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [toggleRecording])
 
   React.useEffect(() => {
     const el = viewRef.current
@@ -178,6 +269,10 @@ export default function DioramaApp() {
           samplerRef={samplerRef}
           head={{ x: state.x, y: state.y, z: state.z }}
           size={SIZE}
+          recording={recording}
+          traceCount={traceCount}
+          onToggleRecord={toggleRecording}
+          onExport={exportTrace}
         />
       )}
       <div className="dio__view" ref={viewRef}
@@ -224,7 +319,7 @@ export default function DioramaApp() {
         <div className="dio__hint">
           <div><b>Glisser</b> dans le viewport pour orbiter la vue</div>
           <div><b>Ctrl+molette</b> pour zoomer · <b>Axes XYZ</b> pour déplacer l'auditeur</div>
-          <div><b>Ctrl+Alt+D</b> pour afficher le panneau debug</div>
+          <div><b>Ctrl+Alt+D</b> panneau debug · <b>Ctrl+Alt+R</b> enregistrer la trace</div>
         </div>
       </div>
       <ControlHUD state={state} set={set} segments={SEGMENTS} clock={clock} clockMode={state.clockMode} />

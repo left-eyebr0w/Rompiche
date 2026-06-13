@@ -1,5 +1,5 @@
 import React from 'react'
-import { makeCoords, headInputToWorld } from './coords.js'
+import { makeCoords, headInputToWorld, HEAD_FACES } from './coords.js'
 
 const DBG_CSS = `
 .dbg{ width:280px; flex:0 0 280px; height:100%; background:var(--canvas-noir);
@@ -39,6 +39,19 @@ const DBG_CSS = `
 .dbg__sval{ font-size:9px; color:var(--on-ink-primary); font-variant-numeric:tabular-nums; }
 .dbg__foot{ padding:10px 18px; border-top:1px solid rgba(232,201,109,.12);
   font-size:8px; color:rgba(232,201,109,.3); letter-spacing:.08em; }
+.dbg__rec{ display:flex; gap:6px; align-items:stretch; }
+.dbg__btn{ flex:1; font-family:var(--font-mono); font-size:9px; letter-spacing:.08em;
+  text-transform:uppercase; padding:7px 8px; border-radius:4px; cursor:pointer;
+  border:1px solid rgba(232,201,109,.3); background:transparent; color:#e8c96d;
+  transition:background .12s, border-color .12s, color .12s; }
+.dbg__btn:hover{ background:rgba(232,201,109,.1); }
+.dbg__btn:disabled{ opacity:.35; cursor:not-allowed; }
+.dbg__btn.on{ background:#e8c96d; border-color:#e8c96d; color:var(--canvas-noir); font-weight:700; }
+.dbg__recmeta{ display:flex; align-items:center; gap:6px; margin-bottom:9px;
+  font-size:8px; letter-spacing:.06em; color:var(--on-ink-faint); }
+.dbg__dot{ width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.18); flex:0 0 7px; }
+.dbg__dot.live{ background:#e8553b; animation:dbgpulse 1s ease-in-out infinite; }
+@keyframes dbgpulse{ 0%,100%{ opacity:1 } 50%{ opacity:.3 } }
 `
 ;(function () {
   if (typeof document === 'undefined' || document.getElementById('dbg-css')) return
@@ -46,14 +59,7 @@ const DBG_CSS = `
   document.head.appendChild(s)
 })()
 
-const FACES = [
-  { label: 'FRONT', n: [0,  0, -1] },
-  { label: 'BACK',  n: [0,  0,  1] },
-  { label: 'DROIT', n: [1,  0,  0] },
-  { label: 'GAUCH', n: [-1, 0,  0] },
-  { label: 'HAUT',  n: [0,  1,  0] },
-  { label: 'BAS',   n: [0, -1,  0] },
-]
+const FACES = HEAD_FACES // 6 points d'écoute directionnels — source unique (coords.js)
 
 function dot3(a, b) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2] }
 function norm3(v) {
@@ -69,7 +75,8 @@ function dbStr(db) {
   return !isFinite(db) ? '—' : db.toFixed(1) + ' dB'
 }
 
-export default function DebugHUD({ samplerRef, head, size }) {
+export default function DebugHUD({ samplerRef, head, size,
+  recording = false, traceCount = 0, onToggleRecord, onExport }) {
   const coords = React.useMemo(() => makeCoords(size), [size])
   const { limit } = coords
 
@@ -135,6 +142,31 @@ export default function DebugHUD({ samplerRef, head, size }) {
       </div>
 
       <div className="dbg__body">
+
+        <section className="dbg__sec">
+          <div className="dbg__sech">Boîte noire · traçage causal</div>
+          <div className="dbg__recmeta">
+            <span className={'dbg__dot' + (recording ? ' live' : '')} />
+            <span>{recording ? 'enregistrement' : 'à l\'arrêt'} · {traceCount} évén.</span>
+          </div>
+          <div className="dbg__rec">
+            <button
+              className={'dbg__btn' + (recording ? ' on' : '')}
+              onClick={onToggleRecord}
+              title="Ctrl+Alt+R"
+            >
+              {recording ? '■ Stop' : '● Rec'}
+            </button>
+            <button
+              className="dbg__btn"
+              onClick={onExport}
+              disabled={recording || traceCount === 0}
+              title="Télécharger le NDJSON"
+            >
+              ⤓ Export
+            </button>
+          </div>
+        </section>
 
         <section className="dbg__sec">
           <div className="dbg__sech">Inputs · 6 faces de la tête</div>
