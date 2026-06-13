@@ -4,6 +4,13 @@
 > **Nature** : la spec fige le *contrat* (structures, flux, invariants). Ce document fige le *chemin* : phases, livrables, fichiers touchés, critères de sortie, risques.
 > **Stratégie retenue** : **fondations d'abord** — sécuriser déterminisme + échelle + verticalité avant d'empiler les couches.
 > **Règle d'or de la migration** : à la fin de **chaque** phase, l'application tourne, s'écoute, et la **boîte noire** reste verte (aucun événement de trace régressé). On ne casse jamais le diorama pour construire le champ.
+>
+> **Fiches de conception détaillées** (structures, pseudo-code, schémas, événements) :
+> [Phase 1 — Couche 3](./docs/migration/PHASE-1.md) ·
+> [Phase 2 — Couche 2](./docs/migration/PHASE-2.md) ·
+> [Phase 3 — LOD & crossfades](./docs/migration/PHASE-3.md) ·
+> [Phase 4 — Threads, budgets & replay](./docs/migration/PHASE-4.md).
+> Ce fichier reste l'**index** : état des lieux, décisions, séquencement. Le détail par phase vit dans `docs/migration/`.
 
 ---
 
@@ -211,6 +218,8 @@ flowchart LR
 
 ## 6. Phase 1 — Couche 3 (diffus lointain)
 
+> 📄 **Conception détaillée** : [`docs/migration/PHASE-1.md`](./docs/migration/PHASE-1.md)
+>
 > **But** : ajouter l'**enveloppement de fond** à coût quasi constant. Le diorama gagne son « wash » de pluie tout autour (§7.2). C'est la couche la plus simple : on valide la chaîne « nouvelle couche → mix → trace » sur le cas le moins risqué.
 
 ### 6.1 Livrables
@@ -238,6 +247,8 @@ flowchart LR
 
 ## 7. Phase 2 — Couche 2 (texture moyenne, secteurs)
 
+> 📄 **Conception détaillée** : [`docs/migration/PHASE-2.md`](./docs/migration/PHASE-2.md)
+>
 > **But** : faire le **pont** entre impacts distincts (Couche 1) et nappe (Couche 3). Granulaire dense, **par secteurs adaptatifs** (décision §16.2), non positionné individuellement.
 
 ### 7.1 Livrables
@@ -266,6 +277,8 @@ flowchart LR
 
 ## 8. Phase 3 — LOD & crossfades
 
+> 📄 **Conception détaillée** : [`docs/migration/PHASE-3.md`](./docs/migration/PHASE-3.md)
+>
 > **But** : **souder** les trois couches. Une source migre de couche selon sa distance, avec hystérésis et fondus à puissance constante — **aucune couture audible** (I7).
 
 ### 8.1 Livrables
@@ -292,6 +305,8 @@ flowchart LR
 
 ## 9. Phase 4 — Threads, budgets & durcissement
 
+> 📄 **Conception détaillée** : [`docs/migration/PHASE-4.md`](./docs/migration/PHASE-4.md)
+>
 > **But** : honorer la **séparation des threads** (I6), les **budgets plateforme** (I2), le **replay complet** (§14), et les optimisations finales.
 
 ### 9.1 Livrables
