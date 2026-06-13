@@ -74,27 +74,6 @@ export default function ControlHUD(props) {
               onChange={e => set({ rain: e.target.checked })} />
             <Switch inverse label="Vent" showState checked={state.wind}
               onChange={e => set({ wind: e.target.checked })} />
-            <div>
-              <div className="hud__note" style={{ marginBottom: 8 }}>
-                Horloge interne · {clockMode === 'manual' ? 'réglage manuel' : 'synchronisée'}
-              </div>
-              <div className="hud__clock">
-                {segments.map(s => (
-                  <button key={s} type="button"
-                    className={'hud__seg' + (s === clock ? ' active' : '')}
-                    onClick={() => set({ clockMode: 'manual', clockSegment: s })}>{s}</button>
-                ))}
-              </div>
-              <div className="hud__clockmode">
-                <span className={'hud__synced' + (clockMode === 'sync' ? ' live' : '')}>
-                  {clockMode === 'sync' ? 'synchronisée à l\'heure locale' : 'découplée de l\'heure réelle'}
-                </span>
-                <Button variant="inverse-ghost" size="sm" mono
-                  iconLeft={<Icon name="refresh-cw" size={12} />}
-                  disabled={clockMode === 'sync'}
-                  onClick={() => set({ clockMode: 'sync' })}>Resync</Button>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -150,10 +129,6 @@ export default function ControlHUD(props) {
         <section className="hud__sec">
           <div className="hud__sech"><Icon name="wind" /><Eyebrow tone="inverse">Paramètres de vent</Eyebrow></div>
           <div className="hud__stack">
-            <Slider inverse label="Inclinaison" min={0} max={1} step={0.05}
-              value={state.windTilt} disabled={!state.wind}
-              formatValue={v => v.toFixed(2)}
-              onChange={e => set({ windTilt: parseFloat(e.target.value) })} />
             <Slider inverse label="Rotation" min={0} max={360} step={5}
               value={state.windRotation} disabled={!state.wind}
               formatValue={v => Math.round(v) + '°'}
@@ -170,21 +145,8 @@ export default function ControlHUD(props) {
           <div className="hud__stack">
             <Slider inverse label="Densité" min={0} max={1} step={0.01}
               value={state.density} disabled={!state.rain} formatValue={v => v.toFixed(2)} onChange={e => set({ density: parseFloat(e.target.value) })} />
-            <Slider inverse label="Gain" min={-24} max={0} step={0.5}
-              value={state.gain} disabled={!state.rain} formatValue={v => v.toFixed(1) + ' dB'} onChange={e => set({ gain: parseFloat(e.target.value) })} />
           </div>
         </section>
-      </div>
-
-      <div className="hud__foot">
-        <div className="hud__btn-full">
-          <Button variant={state.listening ? 'inverse-ghost' : 'inverse'}
-            iconLeft={<Icon name={state.listening ? 'pause' : 'play'} size={15} />}
-            onClick={() => set({ listening: !state.listening })}>
-            {state.listening ? 'Écoute en cours' : 'Lancer l\'écoute'}
-          </Button>
-        </div>
-        <div className="hud__note">Bus 6 canaux · HRTF natif · réverb. paramétrique interpolée</div>
       </div>
     </aside>
   )

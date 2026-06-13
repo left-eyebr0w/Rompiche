@@ -1,26 +1,26 @@
-/* ── Couche 2 : champ de secteurs adaptatifs (§6, §16.2) ─────────────────────
+/* ── Couche 2 : champ de secteurs (§6, §16.2) ────────────────────────────────
    N secteurs uniformément répartis dans le plan horizontal. Chaque secteur
    porte un granulateur (AudioWorklet) encodé dans une source Resonance statique.
-   Les impacts lointains alimentent le débit du secteur correspondant (LOD §5.5).
+
+   Le débit de chaque secteur provient de deux sources :
+     • impacts mid-field (r1..r2) absorbés via absorberImpact() (+2 grains/s)
+     • baseline far-field : world.rainSurfaceAt() sampléé dans [r1,r2], modulé
+       par intensité de la pluie (DENSITY_K) — rend L2 présente même sans impact.
 
    Valeurs résolues (§10) :
-     N            = preset → { room:4, courtyard:8, field:12, diorama:0 }
+     N             = cfg.layers.L2.sectors (résolu depuis preset × plateforme)
      RAYON_SECTEUR = (r1 + r2) / 2
-     contribution  = +2 grains/s
+     CONTRIBUTION  = +2 grains/s par impact
      DECAY         = 0.85 par tick (~30 Hz)
-     débitMax      = 120 grains/s */
+     DEBIT_MAX     = 120 grains/s */
 
 import { worldToResonance } from './coords.js'
 import { MATERIALS } from './materials.js'
 
-const SECTOR_COUNTS = { diorama: 0, room: 4, courtyard: 8, field: 12 }
 const CONTRIBUTION  = 2    // grains/s ajoutés par impact
 const DECAY         = 0.85 // multiplicateur par tick
 const DEBIT_MAX     = 120  // grains/s (plafond)
-
-export function resolveSectorCount(cfg) {
-  return SECTOR_COUNTS[cfg.preset] ?? 0
-}
+const DENSITY_K     = 0.5  // facteur de débit de base (intensité × exposé × K)
 
 export class SectorField {
   constructor(ctx, scene, cfg, bands, prng, banks) {
@@ -30,7 +30,7 @@ export class SectorField {
     this._bands  = bands
     this._prng   = prng
 
-    const N = resolveSectorCount(cfg)
+    const N = cfg.layers.L2.sectors ?? 0
     this._N      = N
     this._actif  = N > 0
     this._sectors = []
@@ -131,17 +131,21 @@ export class SectorField {
     }
   }
 
-  /* ~30 Hz — recalcule géométrie, pousse params aux worklets, émet `sector`. */
-  update(terrain, head, rec) {
+  /* ~30 Hz — débit de base du monde far-field, géométrie, pousse params aux worklets, émet `sector`. */
+  update(world, head, intensity, rec) {
     if (!this._actif) return
     for (const s of this._sectors) {
-      /* Decay du débit (retombe sans alimentation) */
-      s.débit    *= DECAY
+      /* Decay du débit d'impacts (retombe sans alimentation) */
+      s.débit *= DECAY
       if (s.débit < 0.5) s.débit = 0
 
-      /* T-2.6 — Modulation géométrique (minimum viable) */
-      s.occlusion = this._occlusionLocale(terrain, head, s.centreDir)
-      const matMix = this._couvertureMatériau(terrain, head, s.centreDir) ?? s.matMix
+      /* T-2.6 — Modulation géométrique (minimum viable) + débit de base far-field */
+      s.occlusion = this._occlusionLocale(world, head, s.centreDir)
+      const matMix = this._couvertureMatériau(world, head, s.centreDir) ?? s.matMix
+
+      /* Débit de base : monde far-field raining (indépendant des impacts proches) */
+      const baseline = intensity * this._farFieldExposure(world, head, s.centreDir) * DENSITY_K
+      s.débit = Math.min(DEBIT_MAX, s.débit + baseline)
 
       /* Pousse les paramètres au worklet (pas d'allocation ici) */
       s.worklet.port.postMessage({
@@ -161,8 +165,8 @@ export class SectorField {
 
   /* Occlusion locale : raycast court le long de la direction du secteur.
      Retourne 0..1. Une cellule plus haute que la tête d'au moins 1 m → occlusion. */
-  _occlusionLocale(terrain, head, dir) {
-    if (!terrain) return 0
+  _occlusionLocale(world, head, dir) {
+    if (!world) return 0
     const steps  = 6
     const reach  = this._bands.r1 * 0.8
     const headY  = head.y ?? 0
@@ -170,17 +174,16 @@ export class SectorField {
       const t  = (i / steps) * reach
       const cx = head.x + dir.x * t
       const cz = head.z + dir.z * t
-      const cell = terrain.cellAt(cx, cz)
-      if (!cell) continue
-      /* La hauteur en unités-monde de la cellule */
-      if (cell.height > headY + (terrain.block ?? 1)) return Math.min(1, i / steps)
+      const surf = world.rainSurfaceAt(cx, cz)
+      if (surf.y > headY + 1) return Math.min(1, i / steps)
     }
     return 0
   }
 
-  /* Couverture matériau : échantillonne le terrain le long de la direction. */
-  _couvertureMatériau(terrain, head, dir) {
-    if (!terrain) return null
+  /* Couverture matériau : échantillonne le monde le long de la direction,
+     incluant le far-field. */
+  _couvertureMatériau(world, head, dir) {
+    if (!world) return null
     const steps  = 8
     const reach  = (this._bands.r1 + this._bands.r2) / 2
     const counts = {}
@@ -190,14 +193,32 @@ export class SectorField {
       const t  = (i / steps) * reach
       const cx = head.x + dir.x * t
       const cz = head.z + dir.z * t
-      const cell = terrain.cellAt(cx, cz)
-      if (!cell?.material) continue
-      counts[cell.material.id] = (counts[cell.material.id] ?? 0) + 1
+      const surf = world.rainSurfaceAt(cx, cz)
+      if (!surf?.material) continue
+      counts[surf.material] = (counts[surf.material] ?? 0) + 1
       total++
     }
     if (!total) return null
     const mix = {}
     for (const m of MATERIALS) mix[m.id] = (counts[m.id] ?? 0) / total
     return mix
+  }
+
+  /* Exposition lointaine : fraction du monde [r1,r2] qui est exposed (pas occludée).
+     Sampling statistique le long de la direction. */
+  _farFieldExposure(world, head, dir) {
+    if (!world) return 0
+    const steps = 6
+    const r1 = this._bands.r1
+    const r2 = this._bands.r2
+    let exposed = 0
+    for (let i = 1; i <= steps; i++) {
+      const t  = r1 + ((i / steps) * (r2 - r1))
+      const cx = head.x + dir.x * t
+      const cz = head.z + dir.z * t
+      const surf = world.rainSurfaceAt(cx, cz)
+      if (surf?.skyExposed) exposed++
+    }
+    return exposed / steps
   }
 }

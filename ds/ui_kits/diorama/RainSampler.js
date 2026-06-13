@@ -4,6 +4,7 @@ import { makeCoords, headInputToWorld, worldToResonance, LISTENER_FORWARD, HEAD_
 import { makePrng } from './prng.js'
 import { makeWorldConfig, résoudreCouches } from './worldConfig.js'
 import { bakeImpactPoints, pickImpact } from './BakedSet.js'
+import { makeDefaultWorld } from './World.js'
 import { DiffuseBed, resolveBedConfig } from './DiffuseBed.js'
 import { SectorField } from './SectorField.js'
 import { LodController, FONDU_S } from './LodController.js'
@@ -211,6 +212,9 @@ export class RainSampler {
     this.prng   = makePrng(worldCfg.seed)
     this.bands  = résoudreCouches(this.coords.worldRadius, worldCfg)
     this.baked  = null // posé par setTerrain() avant init()
+    this.world  = null // posé par setTerrain() après baking
+    this._terrain = null // référence au terrain pour reconstruire le monde
+    this._intensity = 0 // mis à jour par setWeather()
     this.reservoirs    = new Map()
     this.triggerCounts = new Map()
     this._headWorld    = { x: 0, y: 0, z: 0 }
@@ -229,7 +233,9 @@ export class RainSampler {
   }
 
   setTerrain(terrain) {
+    this._terrain = terrain
     this.baked = bakeImpactPoints(terrain, this.coords)
+    this.world = makeDefaultWorld({ terrain, coords: this.coords })
   }
 
   setRecorder(rec) { this.recorder = rec }
@@ -290,8 +296,8 @@ export class RainSampler {
       this.bed.attachWorklet(bedCfg.noise)
     }
 
-    /* T-2.3 — Instancier le champ de secteurs */
-    if (this._workletReady) {
+    /* T-2.3 — Instancier le champ de secteurs (toujours pour diorama now) */
+    if (this._workletReady && this.cfg.layers.L2.sectors > 0) {
       this.sectors = new SectorField(
         this.ctx, this.scene, this.cfg, this.bands,
         this.prng.fork ? this.prng.fork() : this.prng,
@@ -373,8 +379,14 @@ export class RainSampler {
 
   /* T-1.5 — Pilote la nappe selon la météo courante. */
   setWeather(weather) {
+    this._intensity = Math.max(0, Math.min(1, weather.intensité ?? 0))
     if (!this.bed) return
     this.bed.setWeather(weather, this.recorder?.stateVersion, this.recorder)
+  }
+
+  /* Mise à jour ~30 Hz des secteurs L2 (débit de base + géométrie). */
+  updateSectors(rec) {
+    this.sectors?.update(this.world, this._headWorld, this._intensity, rec)
   }
 
   /* Reconfigure l'échelle sans recréer le contexte audio. */
@@ -385,6 +397,10 @@ export class RainSampler {
     this.limit = this.coords.limit
     this.prng  = makePrng(worldCfg.seed)
     this.bands = résoudreCouches(this.coords.worldRadius, worldCfg)
+    /* Reconstruire le monde avec les nouvelles coordonnées */
+    if (this._terrain) {
+      this.world = makeDefaultWorld({ terrain: this._terrain, coords: this.coords })
+    }
     /* T-1.6 — Collapse diorama : bascule le mode mince de la nappe */
     this.bed?.setMince(this.bands.collapse === 'diorama')
     this._emitScale()
@@ -443,8 +459,19 @@ export class RainSampler {
       const surfFactor = surfaceDensities[sid] ?? 1
       if (surfFactor <= 0) { this._poissonNext[sid] = 0; continue }
 
-      /* Surface exposée = nombre de points baked exposés pour ce matériau */
-      const exposed = this.baked.points.filter(p => p.matériau === sid && p.expoCiel > 0).length
+      /* Surface exposée = nombre de points baked exposés pour ce matériau.
+         Pour 'terre' : inclut aussi les points dont le matériau overlay est désactivé
+         (le sol sous un objet retiré de la scène redevient terre). */
+      let exposed
+      if (sid === 'terre') {
+        exposed = this.baked.points.filter(p => {
+          if (p.expoCiel <= 0) return false
+          if (p.matériau === 'terre') return true
+          return (surfaceDensities[p.matériau] ?? 1) <= 0
+        }).length
+      } else {
+        exposed = this.baked.points.filter(p => p.matériau === sid && p.expoCiel > 0).length
+      }
       if (!exposed) continue
 
       const λ = density * surfFactor * exposed * (MAT_FACTOR[sid] ?? 1) * 0.05 // grains/ms
@@ -459,7 +486,7 @@ export class RainSampler {
         const u = Math.max(1e-9, this.prng.aléa())
         this._poissonNext[sid] = -Math.log(u) / λ
 
-        const point = pickImpact(this.baked, sid, this.prng)
+        const point = pickImpact(this.baked, sid, this.prng, this._headWorld, surfaceDensities)
         if (!point) continue
 
         const impactId = rec?.recording ? rec.nextImpactId() : 0
@@ -691,4 +718,6 @@ export class RainSampler {
   }
 
   resume() { return this.ctx?.resume() }
+
+  suspend() { return this.ctx?.suspend() }
 }

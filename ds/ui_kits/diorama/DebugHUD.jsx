@@ -25,7 +25,7 @@ const DBG_CSS = `
   transition:width .08s linear; }
 .dbg__fdb{ width:44px; text-align:right; font-size:8px; color:var(--on-ink-faint); }
 .dbg__zones{ display:grid; grid-template-columns:repeat(3,1fr); gap:4px; }
-.dbg__zone{ border:1px solid rgba(255,255,255,.07); border-radius:3px; padding:7px 5px;
+.dbg__zone{ border:1px solid rgba(255,255,255,.07); border-radius:3px; padding:4px 3px;
   text-align:center; transition:background .05s, border-color .05s; }
 .dbg__zone.hit{ background:rgba(232,201,109,.12); border-color:rgba(232,201,109,.35); }
 .dbg__zlabel{ font-size:7px; letter-spacing:.06em; color:var(--on-ink-faint); }
@@ -208,24 +208,6 @@ export default function DebugHUD({ samplerRef, head, size,
           </div>
         </section>
 
-        <section className="dbg__sec">
-          <div className="dbg__sech">Auditeur · position</div>
-          <div className="dbg__stats">
-            {[
-              ['X (G/D)',    head.x.toFixed(3)],
-              ['Y (B/H)',    head.y.toFixed(3)],
-              ['Z (AV/AR)',  head.z.toFixed(3)],
-              ['X monde',   (head.x * limit).toFixed(0) + ' px'],
-              ['Y monde',   (head.y * limit).toFixed(0) + ' px'],
-              ['Z monde',   (-head.z * limit).toFixed(0) + ' px'],
-            ].map(([k, v]) => (
-              <div key={k} className="dbg__stat">
-                <span className="dbg__skey">{k}</span>
-                <span className="dbg__sval">{v}</span>
-              </div>
-            ))}
-          </div>
-        </section>
 
       </div>
       <div className="dbg__foot">mesures audio réelles · AnalyserNode par voix</div>

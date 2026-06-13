@@ -1,9 +1,0 @@
-Supprimer : 
-- Désynchronisation de l'horloge + Bouton reset
-- Bouton "écoute en cours" -> Remplacer par écoute auto + mutable en cliquant sur l'icone de barres de sons qui bougent.
-- La position de l'auditeur dans le débug 
-- Slider "inclinaison" -> qui doit toujours être sur "1".
-- Slider "gain" -> qui doit toujours être sur "0".
-Modifier :
-- Taille des indicateur de pluie en débug -> réduire
-- Taille des points autours du cube-tête-de-joueur -> réduire

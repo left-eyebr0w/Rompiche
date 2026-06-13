@@ -6,7 +6,9 @@ import { RainSampler } from './RainSampler.js'
 import { TraceRecorder } from './TraceRecorder.js'
 import { makeCoords } from './coords.js'
 import { makeDefaultTerrain } from './Terrain.js'
+import { makeDefaultObjects } from './objects.js'
 import { makeWorldConfig } from './worldConfig.js'
+import { isDebugEnabled, installDebugApi, registerDebugSampler } from './debug.js'
 
 const SEGMENTS = ['aube', 'jour', 'crépuscule', 'nuit']
 function segmentFor(h) {
@@ -50,7 +52,7 @@ const APP_CSS = `
 export default function DioramaApp() {
   const now = new Date()
   const [state, setState] = React.useState({
-    rain: true, wind: false, windTilt: 0.5, windRotation: 0, windForce: 0.5, metal: true, bache: true, listening: false,
+    rain: true, wind: false, windTilt: 0.5, windRotation: 0, windForce: 0.5, metal: true, bache: true, listening: true,
     x: 0.18, y: 0, z: -0.30, density: 0.42, gain: -6,
     spin: -32, zoom: 1,
     clockMode: 'sync', clockSegment: 'jour',
@@ -73,6 +75,10 @@ export default function DioramaApp() {
     return makeDefaultTerrain({ size: c.size, cell: c.CELL, block: c.BLOCK })
   }, [worldCfg.size])
 
+  /* Objets (couche de props) — vide par défaut. Chemin de données prêt pour un
+     futur Gamemaster ; n'affiche rien tant qu'aucun objet n'est placé. */
+  const objects = React.useMemo(() => makeDefaultObjects(), [])
+
   /* ── Audio sampler ──────────────────────────────────────── */
   const samplerRef = React.useRef(null)
   const gainRef    = React.useRef(state.gain)
@@ -86,6 +92,8 @@ export default function DioramaApp() {
   worldCfgRef.current = worldCfg
   const terrainRef  = React.useRef(terrain)
   terrainRef.current = terrain
+  const objectsRef  = React.useRef(objects)
+  objectsRef.current = objects
 
   /* ── Boîte noire (traçage causal) ─────────────────────────
      Recorder persistant, branché au sampler dès l'init. Inerte tant qu'on
@@ -95,6 +103,15 @@ export default function DioramaApp() {
   const [recording, setRecording] = React.useState(false)
   const [traceCount, setTraceCount] = React.useState(0)
 
+  /* Instrumentation opt-in (?debug=true) : installe window.__rompiche au montage,
+     avant tout démarrage du moteur (permet seed.set() pré-init). Inerte en prod. */
+  const [debugReady, setDebugReady] = React.useState(false)
+  React.useEffect(() => {
+    if (!isDebugEnabled()) return
+    installDebugApi({ getRecorder: () => recRef.current })
+    setDebugReady(true)
+  }, [])
+
   const initSampler = React.useCallback(async () => {
     if (samplerRef.current) { samplerRef.current.resume(); return }
     const cfg = worldCfgRef.current
@@ -103,6 +120,8 @@ export default function DioramaApp() {
     await s.init()
     s.setRecorder(recRef.current)
     samplerRef.current = s
+    /* Instrumentation opt-in (?debug=true) : taps RMS + seed. Inerte sinon. */
+    registerDebugSampler(s, { terrain: terrainRef.current, objects: objectsRef.current })
     const h = headRef.current
     s.setListenerPosition(h.x, h.y, h.z)
     /* Initialise la nappe diffuse avec l'état météo courant */
@@ -111,7 +130,11 @@ export default function DioramaApp() {
   }, [])
 
   React.useEffect(() => {
-    if (state.listening) initSampler()
+    if (state.listening) { initSampler(); return }
+    /* Couper l'écoute suspend le contexte audio : tait L1/L2/L3 d'un coup.
+       (Geler les boucles de update n'arrête que L1 ; L2/L3 sont des nœuds
+       persistants — il faut suspendre le ctx pour les taire aussi.) */
+    samplerRef.current?.suspend()
   }, [state.listening, initSampler])
 
   /* T-1.5b — Mise à jour d'échelle quand preset ou seed change.
@@ -220,7 +243,7 @@ export default function DioramaApp() {
       const s = samplerRef.current
       if (!s?.ready || !stateRef.current.listening) return
       const rec = recRef.current
-      s.sectors?.update(terrainRef.current, s._headWorld, rec)
+      s.updateSectors(rec)
       s.évaluerLod?.(rec)
     }
     rafId = requestAnimationFrame(loop)
@@ -327,7 +350,7 @@ export default function DioramaApp() {
   }, [state.listening, state.rain, state.density])
 
   return (
-    <div className="dio">
+    <div className="dio" data-testid={isDebugEnabled() && debugReady ? 'debug-ready' : undefined}>
       {state.debug && (
         <DebugHUD
           samplerRef={samplerRef}
@@ -344,6 +367,7 @@ export default function DioramaApp() {
         <WireframeCube
           size={worldCfg.size}
           terrain={terrain}
+          objects={objects}
           head={{ x: state.x, y: state.y, z: state.z }}
           rain={state.rain} metal={state.metal} bache={state.bache}
           listening={state.listening}
@@ -370,7 +394,8 @@ export default function DioramaApp() {
             <div className="dio__mode">horloge · {state.clockMode === 'manual' ? 'manuel' : 'sync'}</div>
             <div className="dio__clock">{clock}</div>
             <div className="dio__time">{hhmm}</div>
-            <div className="dio__meter">
+            <div className="dio__meter" style={{ cursor: 'pointer' }} onClick={() => set({ listening: !state.listening })}
+              title={state.listening ? 'Arrêter l\'écoute' : 'Lancer l\'écoute'}>
               {levels.map((l, i) => (
                 <div key={i} className="dio__bar" style={{
                   height: Math.max(6, l) + 'px',

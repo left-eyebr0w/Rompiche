@@ -1,93 +1,63 @@
-import React, { useRef, useEffect, useMemo } from 'react'
+import React, { useRef, useMemo, useLayoutEffect } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { makeCoords } from './coords.js'
+import { materialById } from './materials.js'
 
 /* Token colours (mirrors ds/tokens/colors.css — viewport context) */
 const C = {
-  wire:     0xffffff,
-  wireDim:  0x6e6e6e,
-  wireFaint:0x3a3a3a,
-  blanc:    0xffffff,
-  canvasNoir: '#0d0d0d',
+  wire:      0xffffff,
+  wireDim:   0x6e6e6e,
+  wireFaint: 0x3a3a3a,
+  blanc:     0xffffff,
+  canvasNoir:0x0d0d0d, // fond du viewport — sert de remplissage opaque aux volumes
 }
 
-function buildCubeEdges(size, color) {
-  const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(size, size, size))
-  const mat = new THREE.LineBasicMaterial({ color })
-  return new THREE.LineSegments(geo, mat)
+const RAIN_POOL = 80
+
+/* ── Fabriques de géométries filaires (Three.js pur, mémorisées) ───────────── */
+
+function cubeEdges(size) {
+  return new THREE.EdgesGeometry(new THREE.BoxGeometry(size, size, size))
 }
 
-/* Ground-face hatch geometry — métal = 45° lines, terre = dot grid */
-function buildMetalHatch(halfX, halfZ, size) {
+/* Grille de sol NEUTRE — une seule trame uniforme sur toute l'emprise du monde.
+   En wireframe, le matériau ne pilote aucune texture (métal ≡ bâche ≡ terre) : la
+   localisation des matériaux est une affaire d'audio + overlay debug, pas de la
+   vue de base. Remplace les anciennes hachures 45° / grilles codées en dur. */
+function groundGridGeo(half, size) {
   const pts = []
   const step = Math.max(0.5, size / 25)
-  for (let c = -(halfX + halfZ); c <= halfX + halfZ; c += step) {
-    // NE diagonal: z = x + c, clipped to rectangle [-halfX,halfX]×[-halfZ,halfZ]
-    const x1 = Math.max(-halfX, -halfZ - c), x2 = Math.min(halfX, halfZ - c)
-    if (x1 < x2) {
-      pts.push(new THREE.Vector3(x1, 0, x1 + c))
-      pts.push(new THREE.Vector3(x2, 0, x2 + c))
-    }
-    // NW diagonal: z = -x + c
-    const x3 = Math.max(-halfX, c - halfZ), x4 = Math.min(halfX, c + halfZ)
-    if (x3 < x4) {
-      pts.push(new THREE.Vector3(x3, 0, -x3 + c))
-      pts.push(new THREE.Vector3(x4, 0, -x4 + c))
-    }
+  for (let x = -half; x <= half + 1e-6; x += step) {
+    pts.push(new THREE.Vector3(x, 0, -half), new THREE.Vector3(x, 0, half))
   }
-  const geo = new THREE.BufferGeometry().setFromPoints(pts)
-  return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: C.wireFaint }))
+  for (let z = -half; z <= half + 1e-6; z += step) {
+    pts.push(new THREE.Vector3(-half, 0, z), new THREE.Vector3(half, 0, z))
+  }
+  return new THREE.BufferGeometry().setFromPoints(pts)
 }
 
-function buildBacheGrid(halfX, halfZ, size) {
-  const pts = []
-  const step = Math.max(0.5, size / 25)
-  for (let x = -halfX; x <= halfX; x += step) {
-    pts.push(new THREE.Vector3(x, 0, -halfZ))
-    pts.push(new THREE.Vector3(x, 0,  halfZ))
-  }
-  for (let z = -halfZ; z <= halfZ; z += step) {
-    pts.push(new THREE.Vector3(-halfX, 0, z))
-    pts.push(new THREE.Vector3( halfX, 0, z))
-  }
-  const geo = new THREE.BufferGeometry().setFromPoints(pts)
-  return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: C.wireFaint }))
-}
-
-/* Relief — pour chaque bloc de terrain dont la hauteur > 0, dessine un volume
-   filaire du sol (y = ground) jusqu'à ground + hauteur_monde. Le relief porte
-   ainsi la MÊME hauteur que les points d'impact bakés (BakedSet) → la texture
-   surélevée et le marqueur de voix Debug coïncident enfin. Chaque box mémorise
-   le matériau sous elle (userData.material) pour suivre le toggle de surface. */
-function buildRelief(terrain, size, ground) {
-  const group = new THREE.Group()
-  if (!terrain) return group
-  const half = size / 2
-  const block = terrain.block
-  for (let br = 0; br < terrain.brows; br++) {
-    for (let bc = 0; bc < terrain.bcols; bc++) {
-      const h = terrain.height[br * terrain.bcols + bc]
-      if (!h) continue
-      const hWorld = h * block
-      const cx = (bc + 0.5) * block - half
-      const cz = (br + 0.5) * block - half
-      const matId = terrain.cellAt(cx, cz)?.material?.id ?? 'terre'
-      const color = VOICE_COLORS[matId] ?? C.wireDim
-      const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(block, hWorld, block))
-      const box = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 }))
-      box.position.set(cx, ground + hWorld / 2, cz)
-      box.userData.material = matId
-      group.add(box)
-    }
-  }
-  return group
+/* ── SolidWire — LE look partagé des volumes (relief + objets) ────────────────
+   Face pleine opaque (canvas-noir, écrit dans le depth buffer) + arêtes par-dessus.
+   La face occulte les arêtes du fond → on ne voit plus « à travers » le volume.
+   polygonOffset pousse la face légèrement en arrière pour éviter le z-fighting
+   face/arêtes. Monochrome : le matériau ne change pas la couleur ici. */
+function SolidWire({ box, edges, position, color = C.wireDim, opacity = 1, visible = true }) {
+  return (
+    <group position={position} visible={visible}>
+      <mesh geometry={box}>
+        <meshBasicMaterial color={C.canvasNoir} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+      </mesh>
+      <lineSegments geometry={edges}>
+        <lineBasicMaterial color={color} transparent={opacity < 1} opacity={opacity} />
+      </lineSegments>
+    </group>
+  )
 }
 
 /* Build rain buffer — random (x,z) fixed, y animated via shader time uniform */
 function buildRain(half, count, size) {
-  const positions = []
-  const speeds   = []
-  const offsets  = []
+  const positions = [], speeds = [], offsets = []
   const margin = half * 0.92
   for (let i = 0; i < count; i++) {
     positions.push(
@@ -100,8 +70,8 @@ function buildRain(half, count, size) {
   }
   const geo = new THREE.BufferGeometry()
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geo.setAttribute('speed',    new THREE.Float32BufferAttribute(speeds,    1))
-  geo.setAttribute('offset',   new THREE.Float32BufferAttribute(offsets,   1))
+  geo.setAttribute('speed',    new THREE.Float32BufferAttribute(speeds, 1))
+  geo.setAttribute('offset',   new THREE.Float32BufferAttribute(offsets, 1))
   return geo
 }
 
@@ -130,330 +100,287 @@ void main() {
 }
 `
 
-const RAIN_POOL = 80
+/* ── Caméra : orbite (spin) + zoom, repère partagé avec coords.js ──────────── */
+function CameraRig({ size, spin, zoom }) {
+  const { camera } = useThree()
+  useLayoutEffect(() => {
+    const spinRad = THREE.MathUtils.degToRad(spin)
+    const tiltRad = THREE.MathUtils.degToRad(22.5)
+    const dist = size * 2.1 / zoom
+    camera.position.set(
+      dist * Math.sin(spinRad) * Math.cos(tiltRad),
+      dist * Math.sin(tiltRad),
+      dist * Math.cos(spinRad) * Math.cos(tiltRad),
+    )
+    camera.lookAt(0, 0, 0)
+  }, [camera, size, spin, zoom])
+  return null
+}
 
-/* Couleurs de l'overlay debug des voix (une par matériau) — palette dédiée au
-   diagnostic, volontairement distincte du monochrome de la scène. */
-const VOICE_COLORS = { metal: 0xe8c96d, bache: 0x7ec8e3, terre: 0x9ae87a }
+/* ── Cube monde + sol (grille neutre uniforme) ─────────────────────────────── */
+function WorldScene({ size, half }) {
+  const worldGeo = useMemo(() => cubeEdges(size), [size])
+  const groundGeo = useMemo(() => groundGridGeo(half, size), [half, size])
+  return (
+    <>
+      {/* Cube-monde : arêtes seules (la pièce qu'on regarde de l'intérieur — pas de face) */}
+      <lineSegments geometry={worldGeo}>
+        <lineBasicMaterial color={C.wireDim} />
+      </lineSegments>
+      {/* Sol : trame neutre unique, sans distinction de matériau */}
+      <lineSegments geometry={groundGeo} position={[0, -half, 0]}>
+        <lineBasicMaterial color={C.wireFaint} />
+      </lineSegments>
+    </>
+  )
+}
 
+/* ── Relief : volume plein par bloc surélevé (porte la hauteur des points bakés) ──
+   Substrat STATIQUE dérivé du terrain. Rendu monochrome via SolidWire (face opaque
+   + arêtes) : le matériau ne sert plus qu'au toggle de visibilité (concept audio/UX),
+   pas à la couleur. */
+function Relief({ terrain, half, metal, bache }) {
+  const blocks = useMemo(() => {
+    if (!terrain) return []
+    const block = terrain.block
+    const out = []
+    for (let br = 0; br < terrain.brows; br++) {
+      for (let bc = 0; bc < terrain.bcols; bc++) {
+        const h = terrain.height[br * terrain.bcols + bc]
+        if (!h) continue
+        const hWorld = h * block
+        const cx = (bc + 0.5) * block - half
+        const cz = (br + 0.5) * block - half
+        const matId = terrain.cellAt(cx, cz)?.material?.id ?? 'terre'
+        const boxGeo = new THREE.BoxGeometry(block, hWorld, block)
+        const edges = new THREE.EdgesGeometry(boxGeo)
+        out.push({ box: boxGeo, edges, matId, pos: [cx, -half + hWorld / 2, cz] })
+      }
+    }
+    return out
+  }, [terrain, half])
+
+  /* Visibilité par matériau (suit metal/bache ; terre toujours visible) */
+  const visFor = { metal, bache, terre: true }
+
+  return (
+    <group>
+      {blocks.map((b, i) => (
+        <SolidWire key={i} box={b.box} edges={b.edges} position={b.pos}
+          color={C.wireDim} visible={visFor[b.matId] !== false} />
+      ))}
+    </group>
+  )
+}
+
+/* ── Objets : couche de props placés (objects.js) — même renderer que le relief ──
+   Volumes pleins monochromes. Le matériau est porté par la donnée (audio/futur),
+   invisible ici. Liste vide par défaut → ne rend rien tant qu'aucun objet n'est placé. */
+function Objects({ objects = [] }) {
+  const built = useMemo(() => objects.map(o => {
+    const [w, h, d] = o.size
+    const box = new THREE.BoxGeometry(w, h, d)
+    return { id: o.id, box, edges: new THREE.EdgesGeometry(box), pos: o.position }
+  }), [objects])
+
+  return (
+    <group>
+      {built.map(o => (
+        <SolidWire key={o.id} box={o.box} edges={o.edges} position={o.pos} color={C.wire} />
+      ))}
+    </group>
+  )
+}
+
+/* ── Cube-tête + auditeur + 6 points haut-parleurs ─────────────────────────── */
+function HeadCube({ size, head, listening }) {
+  const HC = Math.round(size * 0.26)
+  const HCH = HC / 2
+  const dotRef = useRef()
+  const headGeo = useMemo(() => cubeEdges(HC), [HC])
+  const dotRadius = Math.max(0.2, HC * 0.25)
+  const faceOffsets = [
+    [0, 0, HCH], [0, 0, -HCH], [HCH, 0, 0], [-HCH, 0, 0], [0, HCH, 0], [0, -HCH, 0],
+  ]
+
+  /* Repère partagé avec l'audio (coords.js) → tête visuelle et auditeur Resonance
+     occupent EXACTEMENT le même point monde (I5). */
+  const { limit } = makeCoords(size)
+  const pos = [head.x * limit, head.y * limit, -head.z * limit]
+
+  /* listening pulse — scale du dot auditeur */
+  useFrame(({ clock }) => {
+    const d = dotRef.current
+    if (!d) return
+    if (!listening) { d.scale.setScalar(1); return }
+    const t = (clock.getElapsedTime() / 1.8) % 1
+    d.scale.setScalar(1 + 0.4 * Math.sin(t * Math.PI * 2))
+  })
+
+  return (
+    <group position={pos}>
+      <lineSegments geometry={headGeo}>
+        <lineBasicMaterial color={C.wire} />
+      </lineSegments>
+      <mesh ref={dotRef}>
+        <sphereGeometry args={[dotRadius, 8, 8]} />
+        <meshBasicMaterial color={C.blanc} transparent opacity={0.5} />
+      </mesh>
+      {faceOffsets.map(([fx, fy, fz], i) => (
+        <mesh key={i} position={[fx, fy, fz]}>
+          <sphereGeometry args={[Math.max(0.1, HC * (i === 0 ? 0.08 : 0.06)), 6, 6]} />
+          <meshBasicMaterial color={i === 0 ? C.blanc : C.wireDim} transparent opacity={0.4} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+/* ── Pluie : Points + ShaderMaterial GLSL (conservé) + détection d'impact visuel ── */
+function Rain({ half, size, rain, density, wind, windTilt, windRotation, windForce, terrain, metal, bache, onImpact }) {
+  const geo = useMemo(() => buildRain(half, RAIN_POOL, size), [half, size])
+  const mat = useMemo(() => new THREE.ShaderMaterial({
+    vertexShader: RAIN_VERT,
+    fragmentShader: RAIN_FRAG,
+    uniforms: {
+      uTime:         { value: 0 },
+      uHalf:         { value: half },
+      uOpacity:      { value: 0.6 },
+      uWindTilt:     { value: 0 },
+      uWindRotation: { value: 0 },
+    },
+    transparent: true,
+  }), [half])
+
+  const prevPhases = useRef(new Float64Array(RAIN_POOL))
+  const dropCount = rain ? Math.round(density * RAIN_POOL) : 0
+
+  /* Sync uniforms + drawRange (visibilité, densité, vent) */
+  useLayoutEffect(() => {
+    mat.uniforms.uHalf.value = half
+    mat.uniforms.uOpacity.value = rain ? 0.55 : 0
+    mat.uniforms.uWindTilt.value = wind ? windTilt * windForce * (Math.PI / 4) : 0
+    mat.uniforms.uWindRotation.value = windRotation * (Math.PI / 180)
+    geo.setDrawRange(0, dropCount)
+  }, [mat, geo, half, rain, dropCount, wind, windTilt, windForce, windRotation])
+
+  /* Refs synchrones pour le callback d'impact (visuel uniquement). */
+  const cb = useRef()
+  cb.current = { metal, bache, onImpact, terrain }
+
+  useFrame(({ clock }) => {
+    const uTime = clock.getElapsedTime()
+    mat.uniforms.uTime.value = uTime
+
+    /* Impact detection: fire onImpact when a grain phase wraps past an integer.
+       Visuel seulement — l'audio est piloté par tickPoisson (T-0.H1). */
+    const { metal: mA, bache: bA, onImpact: fn, terrain: terr } = cb.current
+    if (!fn) return
+    const _pos = geo.attributes.position.array
+    const _spd = geo.attributes.speed.array
+    const _off = geo.attributes.offset.array
+    const wTilt = mat.uniforms.uWindTilt.value
+    const wRot = mat.uniforms.uWindRotation.value
+    const drawCount = Math.min(geo.drawRange.count, RAIN_POOL)
+    const prev = prevPhases.current
+    for (let i = 0; i < drawCount; i++) {
+      const floorNow = Math.floor(_off[i] + uTime / _spd[i])
+      if (floorNow > prev[i]) {
+        prev[i] = floorNow
+        const baseX = _pos[i * 3], baseY = _pos[i * 3 + 1], baseZ = _pos[i * 3 + 2]
+        const disp = Math.sin(wTilt) * (-half - baseY)
+        const ix = baseX + Math.cos(wRot) * disp
+        const iz = baseZ + Math.sin(wRot) * disp
+        const base = terr?.cellAt(ix, iz)?.material?.id ?? 'terre'
+        let surface = base
+        if (base === 'metal' && !mA) surface = 'terre'
+        else if (base === 'bache' && !bA) surface = 'terre'
+        fn(surface, { x: ix, z: iz })
+      }
+    }
+  })
+
+  return <points geometry={geo} material={mat} visible={rain} />
+}
+
+/* ── Overlay 3D debug des voix audio ──────────────────────────────────────────
+   Un marqueur (octaèdre filaire + pied) par voix ACTIVE du pool, à sa position
+   MONDE réelle. Couleur = matériau, taille + opacité = niveau RMS du grain. */
+function VoiceOverlay({ size, half, samplerRef }) {
+  const HC = Math.round(size * 0.26)
+  const markerSize = Math.max(0.3, HC * 0.8)
+  const diamondGeo = useMemo(() => new THREE.EdgesGeometry(new THREE.OctahedronGeometry(markerSize)), [markerSize])
+  const stemGeo = useMemo(() => new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, -1, 0),
+  ]), [])
+
+  const groupRef = useRef()
+  const markers = useRef([])
+
+  function makeMarker(parent) {
+    const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 })
+    const g = new THREE.Group()
+    const diamond = new THREE.LineSegments(diamondGeo, mat)
+    const stem = new THREE.Line(stemGeo, mat)
+    g.add(diamond); g.add(stem); g.visible = false
+    parent.add(g)
+    const mk = { group: g, diamond, stem, mat }
+    markers.current.push(mk)
+    return mk
+  }
+
+  useFrame(() => {
+    const grp = groupRef.current
+    const sampler = samplerRef?.current
+    if (!grp) return
+    if (!sampler?.ready) { grp.visible = false; return }
+    grp.visible = true
+    const voices = sampler.debugVoices()
+    while (markers.current.length < voices.length) makeMarker(grp)
+    for (let i = 0; i < markers.current.length; i++) {
+      const mk = markers.current[i]
+      const v = voices[i]
+      if (!v?.busy) { mk.group.visible = false; continue }
+      mk.group.visible = true
+      mk.group.position.set(v.x, v.y, v.z)
+      const lin = isFinite(v.level) ? Math.min(1, Math.max(0, (v.level + 50) / 45)) : 0
+      mk.diamond.scale.setScalar(0.5 + 1.3 * lin)
+      mk.mat.opacity = 0.2 + 0.7 * lin
+      mk.mat.color.setHex(materialById(v.materialId)?.debugColor ?? 0xffffff)
+      mk.stem.scale.y = v.y + half // pied jusqu'au sol (y = −half)
+    }
+  })
+
+  return <group ref={groupRef} visible={false} />
+}
+
+/* ── Composant racine — interface identique à l'ancien WireframeCube ─────────── */
 export default function WireframeCube({
-  size = 360, terrain = null, head = { x: 0, y: 0, z: 0 },
+  size = 360, terrain = null, objects = [], head = { x: 0, y: 0, z: 0 },
   rain = true, metal = true, bache = true, listening = false,
   spin = -32, zoom = 1, density = 0.5, wind = false, windTilt = 0.5, windRotation = 0, windForce = 0.5,
   onImpact = null,
   samplerRef = null, debug = false,
 }) {
-  const canvasRef   = useRef(null)
-  const threeRef    = useRef(null)
-  const impactState = useRef({ metal, bache, onImpact, terrain })
-  const debugState  = useRef({ debug, samplerRef })
-
   const half = size / 2
-  /* La densité pilote les gouttes visuelles ET l'audio de la même façon : à 0,
-     plus aucune goutte (raccord avec λ = density·… côté RainSampler). */
-  const dropCount = rain ? Math.round(density * RAIN_POOL) : 0
-
-  /* ── Init Three.js once ─────────────────────────────────── */
-  useEffect(() => {
-    const canvas = canvasRef.current
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
-    renderer.setClearColor(0x000000, 0)
-    renderer.setPixelRatio(window.devicePixelRatio)
-
-    const scene = new THREE.Scene()
-
-    const w = canvas.clientWidth  || canvas.offsetWidth  || 800
-    const h = canvas.clientHeight || canvas.offsetHeight || 600
-    renderer.setSize(w, h, false)
-
-    const camera = new THREE.PerspectiveCamera(45, w / h, 1, 5000)
-    camera.position.set(0, 0, size * 2.1 / zoom)
-    camera.lookAt(0, 0, 0)
-
-    /* World cube — 5 dim edges + 1 bright front-facing edge group */
-    const worldEdges = buildCubeEdges(size, C.wireDim)
-    scene.add(worldEdges)
-
-    /* Ground plane split — left=métal, right=bâche (cf. terrain par défaut) */
-    const metalHatch = buildMetalHatch(half / 2, half, size)
-    metalHatch.position.set(-half / 2, -half, 0)
-    scene.add(metalHatch)
-
-    const bacheGrid = buildBacheGrid(half / 2, half, size)
-    bacheGrid.position.set(half / 2, -half, 0)
-    scene.add(bacheGrid)
-
-    /* Ground divider */
-    const divGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, -half, -half),
-      new THREE.Vector3(0, -half,  half),
-    ])
-    const divLine = new THREE.Line(divGeo, new THREE.LineBasicMaterial({ color: C.wireFaint }))
-    scene.add(divLine)
-
-    /* Head cube */
-    const HC = Math.round(size * 0.26)
-    const headEdges = buildCubeEdges(HC, C.wire)
-    scene.add(headEdges)
-
-    /* Listener dot */
-    const headDotRadius = Math.max(0.2, HC * 0.25)
-    const headDotGeo = new THREE.SphereGeometry(headDotRadius, 8, 8)
-    const headDotMat = new THREE.MeshBasicMaterial({ color: C.blanc, transparent: true, opacity: 0.5 })
-    const headDot    = new THREE.Mesh(headDotGeo, headDotMat)
-    scene.add(headDot)
-
-    /* Speaker dots on head-cube faces */
-    const HCH = HC / 2
-    const speakerDots = []
-    const faceOffsets = [
-      [0, 0, HCH], [0, 0, -HCH],
-      [HCH, 0, 0], [-HCH, 0, 0],
-      [0, HCH, 0], [0, -HCH, 0],
-    ]
-    faceOffsets.forEach(([fx, fy, fz], i) => {
-      const speakerRadius = Math.max(0.15, HC * (i === 0 ? 0.15 : 0.12))
-      const g = new THREE.SphereGeometry(speakerRadius, 6, 6)
-      const m = new THREE.MeshBasicMaterial({ color: i === 0 ? C.blanc : C.wireDim, transparent: true, opacity: 0.4 })
-      const mesh = new THREE.Mesh(g, m)
-      mesh.position.set(fx, fy, fz)
-      headEdges.add(mesh)
-      speakerDots.push(mesh)
-    })
-
-    /* Rain */
-    const rainGeo = buildRain(half, RAIN_POOL, size)
-    const _speeds    = rainGeo.attributes.speed.array
-    const _offsets   = rainGeo.attributes.offset.array
-    const _positions = rainGeo.attributes.position.array
-    const prevPhases = new Float64Array(RAIN_POOL)   /* tracks floor(offset + uTime/speed) */
-
-    const rainMat = new THREE.ShaderMaterial({
-      vertexShader: RAIN_VERT,
-      fragmentShader: RAIN_FRAG,
-      uniforms: {
-        uTime:       { value: 0 },
-        uHalf:       { value: half },
-        uOpacity:    { value: 0.6 },
-        uWindTilt:     { value: 0 },
-        uWindRotation: { value: 0 },
-      },
-      transparent: true,
-    })
-    const rainPoints = new THREE.Points(rainGeo, rainMat)
-    scene.add(rainPoints)
-
-    /* ── Overlay 3D debug des voix audio ────────────────────────────────────
-       Un marqueur par voix ACTIVE du pool, à sa position MONDE réelle — celle
-       que Resonance entend (donc Y_FLATTEN visible : les losanges flottent
-       au-dessus du sol, le pied les ancre sur l'impact). Couleur = matériau,
-       taille + opacité = niveau RMS du grain. Togglé avec le mode debug. */
-    const voiceGroup = new THREE.Group()
-    voiceGroup.visible = false
-    scene.add(voiceGroup)
-    const voiceMarkerSize = Math.max(0.3, HC * 0.8)
-    const voiceGeo = new THREE.EdgesGeometry(new THREE.OctahedronGeometry(voiceMarkerSize))
-    const stemGeo  = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, -1, 0), // unitaire, scale.y = hauteur
-    ])
-    const voiceMarkers = [] // créés paresseusement jusqu'à la taille du pool
-    function makeVoiceMarker() {
-      const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 })
-      const group = new THREE.Group()
-      const diamond = new THREE.LineSegments(voiceGeo, mat)
-      const stem = new THREE.Line(stemGeo, mat)
-      group.add(diamond)
-      group.add(stem)
-      group.visible = false
-      voiceGroup.add(group)
-      const mk = { group, diamond, stem, mat }
-      voiceMarkers.push(mk)
-      return mk
-    }
-
-    /* Resize observer */
-    const ro = new ResizeObserver(() => {
-      const el = canvas.parentElement
-      if (!el) return
-      const W = el.clientWidth, H = el.clientHeight
-      renderer.setSize(W, H, false)
-      camera.aspect = W / H
-      camera.updateProjectionMatrix()
-    })
-    ro.observe(canvas.parentElement)
-
-    /* RAF loop */
-    let rafId
-    const clock = new THREE.Clock()
-    function animate() {
-      rafId = requestAnimationFrame(animate)
-      const uTime = clock.getElapsedTime()
-      rainMat.uniforms.uTime.value = uTime
-
-      /* Impact detection: fire onImpact when a grain phase wraps past an integer */
-      const { metal: mActive, bache: bActive, onImpact: cb, terrain: terr } = impactState.current
-      if (cb) {
-        const wTilt = rainMat.uniforms.uWindTilt.value
-        const wRot  = rainMat.uniforms.uWindRotation.value
-        const drawCount = Math.min(rainGeo.drawRange.count, RAIN_POOL)
-        for (let i = 0; i < drawCount; i++) {
-          const phase    = _offsets[i] + uTime / _speeds[i]
-          const floorNow = Math.floor(phase)
-          if (floorNow > prevPhases[i]) {
-            prevPhases[i] = floorNow
-            /* Recalcule la position au sol en tenant compte du vent (même logique que le shader) */
-            const baseX = _positions[i * 3]
-            const baseY = _positions[i * 3 + 1]
-            const baseZ = _positions[i * 3 + 2]
-            const disp  = Math.sin(wTilt) * (-half - baseY)
-            const ix    = baseX + Math.cos(wRot) * disp
-            const iz    = baseZ + Math.sin(wRot) * disp
-            /* Visuel seulement : cb peut être utilisé pour un flash visuel mais
-               ne déclenche plus de son. L'audio est piloté par tickPoisson (T-0.H1). */
-            const base = terr?.cellAt(ix, iz)?.material?.id ?? 'terre'
-            let surface = base
-            if (base === 'metal' && !mActive) surface = 'terre'
-            else if (base === 'bache' && !bActive) surface = 'terre'
-            cb(surface, { x: ix, z: iz }) // callback conservé pour usage visuel uniquement
-          }
-        }
-      }
-
-      /* Overlay debug : reflète l'état du pool de voix à chaque frame */
-      const { debug: dbg, samplerRef: sref } = debugState.current
-      const sampler = sref?.current
-      voiceGroup.visible = !!(dbg && sampler?.ready)
-      if (voiceGroup.visible) {
-        const voices = sampler.debugVoices()
-        while (voiceMarkers.length < voices.length) makeVoiceMarker()
-        for (let i = 0; i < voiceMarkers.length; i++) {
-          const mk = voiceMarkers[i]
-          const v = voices[i]
-          if (!v?.busy) { mk.group.visible = false; continue }
-          mk.group.visible = true
-          mk.group.position.set(v.x, v.y, v.z)
-          /* niveau RMS [−50, −5] dB → présence [0, 1] */
-          const lin = isFinite(v.level) ? Math.min(1, Math.max(0, (v.level + 50) / 45)) : 0
-          mk.diamond.scale.setScalar(0.5 + 1.3 * lin)
-          mk.mat.opacity = 0.2 + 0.7 * lin
-          mk.mat.color.setHex(VOICE_COLORS[v.materialId] ?? 0xffffff)
-          mk.stem.scale.y = v.y + half // pied jusqu'au sol (y = −half)
-        }
-      }
-
-      renderer.render(scene, camera)
-    }
-    animate()
-
-    threeRef.current = {
-      renderer, scene, camera, clock,
-      worldEdges, metalHatch, bacheGrid, divLine,
-      headEdges, headDot,
-      rainPoints, rainMat, rainGeo,
-      HC, HCH,
-    }
-
-    return () => {
-      cancelAnimationFrame(rafId)
-      ro.disconnect()
-      renderer.dispose()
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  /* Keep impactState ref in sync with latest props (no re-render needed) */
-  impactState.current = { metal, bache, onImpact, terrain }
-  debugState.current  = { debug, samplerRef }
-
-  /* ── Sync props → Three.js objects ─────────────────────── */
-
-  /* spin (camera azimuth) + zoom (camera Z) */
-  useEffect(() => {
-    const r = threeRef.current
-    if (!r) return
-    const spinRad = THREE.MathUtils.degToRad(spin)
-    const tiltRad = THREE.MathUtils.degToRad(22.5)
-    const dist = size * 2.1 / zoom
-    r.camera.position.set(
-      dist * Math.sin(spinRad) * Math.cos(tiltRad),
-      dist * Math.sin(tiltRad),
-      dist * Math.cos(spinRad) * Math.cos(tiltRad),
-    )
-    r.camera.lookAt(0, 0, 0)
-  }, [spin, zoom, size])
-
-  /* head position */
-  useEffect(() => {
-    const r = threeRef.current
-    if (!r) return
-    const { headEdges, headDot } = r
-    /* Repère partagé avec l'audio (coords.js) → la tête visuelle et l'auditeur
-       Resonance occupent EXACTEMENT le même point monde (I5). */
-    const { limit } = makeCoords(size)
-    const pos = new THREE.Vector3(head.x * limit, head.y * limit, -head.z * limit)
-    headEdges.position.copy(pos)
-    headDot.position.copy(pos)
-  }, [head.x, head.y, head.z, half])
-
-  /* rain visibility + density + wind */
-  useEffect(() => {
-    const r = threeRef.current
-    if (!r) return
-    r.rainPoints.visible = rain
-    r.rainMat.uniforms.uOpacity.value = rain ? 0.55 : 0
-    r.rainMat.uniforms.uWindTilt.value     = wind ? windTilt * windForce * (Math.PI / 4) : 0
-    r.rainMat.uniforms.uWindRotation.value = windRotation * (Math.PI / 180)
-    /* show only dropCount points by adjusting drawRange */
-    r.rainGeo.setDrawRange(0, dropCount)
-  }, [rain, dropCount, wind, windTilt, windForce, windRotation])
-
-  /* relief — (re)construit quand le terrain ou l'échelle change */
-  useEffect(() => {
-    const r = threeRef.current
-    if (!r || !terrain) return
-    const group = buildRelief(terrain, size, -half)
-    r.scene.add(group)
-    r.reliefGroup = group
-    return () => {
-      r.scene.remove(group)
-      group.traverse(o => { o.geometry?.dispose?.(); o.material?.dispose?.() })
-      if (r.reliefGroup === group) r.reliefGroup = null
-    }
-  }, [terrain, size, half])
-
-  /* metal / bache ground zones — texture plate ET relief suivent le toggle */
-  useEffect(() => {
-    const r = threeRef.current
-    if (!r) return
-    r.metalHatch.visible = metal
-    r.bacheGrid.visible  = bache
-    const vis = { metal, bache, terre: true }
-    r.reliefGroup?.children.forEach(box => { box.visible = vis[box.userData.material] !== false })
-  }, [metal, bache, terrain])
-
-  /* listening pulse — scale headDot */
-  useEffect(() => {
-    const r = threeRef.current
-    if (!r) return
-    let rafId
-    if (!listening) {
-      r.headDot.scale.setScalar(1)
-      return
-    }
-    const start = performance.now()
-    function pulse(now) {
-      const t = ((now - start) / 1800) % 1
-      const s = 1 + 0.4 * Math.sin(t * Math.PI * 2)
-      r.headDot.scale.setScalar(s)
-      rafId = requestAnimationFrame(pulse)
-    }
-    rafId = requestAnimationFrame(pulse)
-    return () => cancelAnimationFrame(rafId)
-  }, [listening])
-
   return (
-    <canvas
-      ref={canvasRef}
+    <Canvas
+      gl={{ antialias: true, alpha: true }}
+      camera={{ fov: 45, near: 1, far: 5000, position: [0, 0, size * 2.1] }}
+      onCreated={({ gl }) => gl.setClearColor(0x000000, 0)}
       style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}
-    />
+    >
+      <CameraRig size={size} spin={spin} zoom={zoom} />
+      <WorldScene size={size} half={half} />
+      <Relief terrain={terrain} half={half} metal={metal} bache={bache} />
+      <Objects objects={objects} />
+      <HeadCube size={size} head={head} listening={listening} />
+      <Rain
+        half={half} size={size} rain={rain} density={density}
+        wind={wind} windTilt={windTilt} windRotation={windRotation} windForce={windForce}
+        terrain={terrain} metal={metal} bache={bache} onImpact={onImpact}
+      />
+      {debug && <VoiceOverlay size={size} half={half} samplerRef={samplerRef} />}
+    </Canvas>
   )
 }

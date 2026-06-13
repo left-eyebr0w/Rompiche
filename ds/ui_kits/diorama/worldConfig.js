@@ -28,7 +28,7 @@ const COMMON = {
 }
 
 export const PRESETS = {
-  diorama:   { size: 4,  L1rMax: 2.5, L2rMax: null, sectors: 0,  crossfade: 0.30 },
+  diorama:   { size: 4,  L1rMax: 2.5, L2rMax: 10,   sectors: 8,  crossfade: 0.30 },
   room:      { size: 12, L1rMax: 4,   L2rMax: 10,   sectors: 4,  crossfade: 0.25 },
   courtyard: { size: 30, L1rMax: 5,   L2rMax: 22,   sectors: 8,  crossfade: 0.20 },
   field:     { size: 80, L1rMax: 6,   L2rMax: 35,   sectors: 12, crossfade: 0.15 },
@@ -55,7 +55,15 @@ export function makeWorldConfig({ preset = 'diorama', seed = 1, platform } = {})
     platform: platform ?? detectPlatform(),
     ambisonicOrder: pl.ambisonicOrder,
     layers: {
-      L1: { ...COMMON.L1, voices: pl.voicesL1, rMax: p.L1rMax },
+      /* Quand L2 est absent (sectors=0), l'hémisphère arrière n'a aucun autre support :
+         on neutralise le biais d'attention du vol de voix (w_att) pour ne pas raboter
+         en continu les voix derrière l'auditeur et détruire le surround. */
+      L1: {
+        ...COMMON.L1,
+        voices: pl.voicesL1,
+        rMax: p.L1rMax,
+        priorité: { ...COMMON.L1.priorité, w_att: sectors > 0 ? COMMON.L1.priorité.w_att : 0 },
+      },
       L2: { ...COMMON.L2, rMax: p.L2rMax, sectors },
       L3: { ...COMMON.L3 },
       crossfade: p.crossfade,
@@ -65,13 +73,17 @@ export function makeWorldConfig({ preset = 'diorama', seed = 1, platform } = {})
   }
 }
 
-/** Résolution des frontières r1/r2 et détection du mode collapse (§4.1-4.2). */
+/** Résolution des frontières r1/r2 et détection du mode collapse (§4.1-4.2).
+    r1 (L1) est borné par la slice (worldRadius) ; r2 (L2) peut s'étendre au-delà
+    du monde visible (far-field world). */
 export function résoudreCouches(worldRadius, cfg) {
   const r1 = Math.min(cfg.layers.L1.rMax, worldRadius)
   const r2 = cfg.layers.L2.rMax == null
     ? r1
-    : Math.min(cfg.layers.L2.rMax, worldRadius)
-  const overlap = cfg.layers.crossfade * Math.max(0, r2 - r1)
+    : cfg.layers.L2.rMax
+  /* overlap = zone de transition L1→L2. Borné à r1 pour éviter que la zone
+     de crossfade n'engloutisse L1 quand r2 >> r1 (ex: diorama r1=2, r2=10). */
+  const overlap = cfg.layers.crossfade * Math.min(r2 - r1, r1)
   const collapse =
     worldRadius <= r1 ? 'diorama' :
     worldRadius <= r2 ? 'small'   : 'full'

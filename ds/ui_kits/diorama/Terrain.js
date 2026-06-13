@@ -1,4 +1,4 @@
-import { MATERIALS, MATERIAL_INDEX } from './materials.js'
+import { MATERIALS, MATERIAL_INDEX, requireMaterial } from './materials.js'
 
 /* ── Couche 1 · le terrain (donnée, éditable) — §6 de SYSTEME-SURFACES.md ────
    Deux résolutions : le MATÉRIAU vit sur la grille fine (cellule 0,5 m), le
@@ -45,14 +45,18 @@ export class Terrain {
   }
 
   /* Remplit chaque cellule via un prédicat (cx, cz) → id matériau, en passant le
-     CENTRE monde de la cellule. Boucle locale O(cellules), indépendante du runtime. */
+     CENTRE monde de la cellule. Boucle locale O(cellules), indépendante du runtime.
+     Chaque cellule DOIT recevoir un matériau valide : requireMaterial lève si le
+     prédicat renvoie un id inconnu (plus de défaut silencieux sur l'indice 0). */
   fill(materialAt) {
     const half = this.size / 2
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
         const cx = (c + 0.5) * this.cell - half
         const cz = (r + 0.5) * this.cell - half
-        this.material[r * this.cols + c] = MATERIAL_INDEX[materialAt(cx, cz)] ?? 0
+        const id = materialAt(cx, cz)
+        requireMaterial(id) // invariant : matériau obligatoire (lève si inconnu)
+        this.material[r * this.cols + c] = MATERIAL_INDEX[id]
       }
     }
   }
