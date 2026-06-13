@@ -15,7 +15,10 @@ export function makeCoords(size) {
     size,
     half,
     HC,
-    limit: half - HC / 2 - 10, // course de l'auditeur sur chaque axe
+    // course de l'auditeur sur chaque axe. Marge métrique (10 % du demi-côté),
+    // PAS une constante pixel : `size` est en mètres depuis la migration WorldConfig.
+    // Source UNIQUE partagée par l'audio (headInputToWorld) ET le visuel (WireframeCube) → I5.
+    limit: Math.max(0.1, half - HC / 2 - half * 0.1),
     ground: -half,             // plan du sol en monde
     METER,
     BLOCK: METER,

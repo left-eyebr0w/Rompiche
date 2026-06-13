@@ -439,14 +439,15 @@ export class RainSampler {
 
     for (const m of MATERIALS) {
       const sid = m.id
-      const active = surfaceDensities[sid] !== false
-      if (!active) { this._poissonNext[sid] = 0; continue }
+      /* surfaceDensities[sid] : multiplicateur 0..1 (0 = surface coupée depuis l'UI). */
+      const surfFactor = surfaceDensities[sid] ?? 1
+      if (surfFactor <= 0) { this._poissonNext[sid] = 0; continue }
 
       /* Surface exposée = nombre de points baked exposés pour ce matériau */
       const exposed = this.baked.points.filter(p => p.matériau === sid && p.expoCiel > 0).length
       if (!exposed) continue
 
-      const λ = density * exposed * (MAT_FACTOR[sid] ?? 1) * 0.05 // grains/ms
+      const λ = density * surfFactor * exposed * (MAT_FACTOR[sid] ?? 1) * 0.05 // grains/ms
       if (λ <= 0) continue
 
       this._poissonAcc[sid] = (this._poissonAcc[sid] || 0) + dtMs

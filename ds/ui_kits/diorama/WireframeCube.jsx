@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
+import { makeCoords } from './coords.js'
 
 /* Token colours (mirrors ds/tokens/colors.css — viewport context) */
 const C = {
@@ -51,6 +52,35 @@ function buildBacheGrid(halfX, halfZ, size) {
   }
   const geo = new THREE.BufferGeometry().setFromPoints(pts)
   return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: C.wireFaint }))
+}
+
+/* Relief — pour chaque bloc de terrain dont la hauteur > 0, dessine un volume
+   filaire du sol (y = ground) jusqu'à ground + hauteur_monde. Le relief porte
+   ainsi la MÊME hauteur que les points d'impact bakés (BakedSet) → la texture
+   surélevée et le marqueur de voix Debug coïncident enfin. Chaque box mémorise
+   le matériau sous elle (userData.material) pour suivre le toggle de surface. */
+function buildRelief(terrain, size, ground) {
+  const group = new THREE.Group()
+  if (!terrain) return group
+  const half = size / 2
+  const block = terrain.block
+  for (let br = 0; br < terrain.brows; br++) {
+    for (let bc = 0; bc < terrain.bcols; bc++) {
+      const h = terrain.height[br * terrain.bcols + bc]
+      if (!h) continue
+      const hWorld = h * block
+      const cx = (bc + 0.5) * block - half
+      const cz = (br + 0.5) * block - half
+      const matId = terrain.cellAt(cx, cz)?.material?.id ?? 'terre'
+      const color = VOICE_COLORS[matId] ?? C.wireDim
+      const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(block, hWorld, block))
+      const box = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 }))
+      box.position.set(cx, ground + hWorld / 2, cz)
+      box.userData.material = matId
+      group.add(box)
+    }
+  }
+  return group
 }
 
 /* Build rain buffer — random (x,z) fixed, y animated via shader time uniform */
@@ -119,7 +149,9 @@ export default function WireframeCube({
   const debugState  = useRef({ debug, samplerRef })
 
   const half = size / 2
-  const dropCount = rain ? Math.round(12 + density * (RAIN_POOL - 12)) : 0
+  /* La densité pilote les gouttes visuelles ET l'audio de la même façon : à 0,
+     plus aucune goutte (raccord avec λ = density·… côté RainSampler). */
+  const dropCount = rain ? Math.round(density * RAIN_POOL) : 0
 
   /* ── Init Three.js once ─────────────────────────────────── */
   useEffect(() => {
@@ -353,8 +385,10 @@ export default function WireframeCube({
   useEffect(() => {
     const r = threeRef.current
     if (!r) return
-    const { HC, HCH, headEdges, headDot } = r
-    const limit = Math.max(0.1, half - HCH - half * 0.1)
+    const { headEdges, headDot } = r
+    /* Repère partagé avec l'audio (coords.js) → la tête visuelle et l'auditeur
+       Resonance occupent EXACTEMENT le même point monde (I5). */
+    const { limit } = makeCoords(size)
     const pos = new THREE.Vector3(head.x * limit, head.y * limit, -head.z * limit)
     headEdges.position.copy(pos)
     headDot.position.copy(pos)
@@ -372,13 +406,29 @@ export default function WireframeCube({
     r.rainGeo.setDrawRange(0, dropCount)
   }, [rain, dropCount, wind, windTilt, windForce, windRotation])
 
-  /* metal / bache ground zones */
+  /* relief — (re)construit quand le terrain ou l'échelle change */
+  useEffect(() => {
+    const r = threeRef.current
+    if (!r || !terrain) return
+    const group = buildRelief(terrain, size, -half)
+    r.scene.add(group)
+    r.reliefGroup = group
+    return () => {
+      r.scene.remove(group)
+      group.traverse(o => { o.geometry?.dispose?.(); o.material?.dispose?.() })
+      if (r.reliefGroup === group) r.reliefGroup = null
+    }
+  }, [terrain, size, half])
+
+  /* metal / bache ground zones — texture plate ET relief suivent le toggle */
   useEffect(() => {
     const r = threeRef.current
     if (!r) return
     r.metalHatch.visible = metal
     r.bacheGrid.visible  = bache
-  }, [metal, bache])
+    const vis = { metal, bache, terre: true }
+    r.reliefGroup?.children.forEach(box => { box.visible = vis[box.userData.material] !== false })
+  }, [metal, bache, terrain])
 
   /* listening pulse — scale headDot */
   useEffect(() => {
