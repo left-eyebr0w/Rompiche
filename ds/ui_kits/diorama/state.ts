@@ -1,8 +1,7 @@
 /* État React centralisé du diorama (DioramaApp.jsx).
    Module purement typé : aucune valeur à l'exécution. Source de vérité des
-   énumérations de configuration partagées (Preset, Platform…). */
+   énumérations de configuration partagées (Platform…). */
 
-export type Preset = 'diorama' | 'room' | 'courtyard' | 'field'
 export type Platform = 'mobile' | 'desktop' | 'vr'
 export type ClockMode = 'sync' | 'manual'
 export type ClockSegment = 'aube' | 'jour' | 'crépuscule' | 'nuit'
@@ -43,7 +42,6 @@ export interface DioramaState {
   debug: boolean
 
   /** Configuration monde */
-  preset: Preset
   seed: number
   platform: Platform
 }

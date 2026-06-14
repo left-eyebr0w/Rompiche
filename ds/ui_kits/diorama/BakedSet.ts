@@ -85,9 +85,15 @@ export function pickImpact(
   prng: Prng,
   head: Vector3 | null,
   surfaceDensities: Partial<Record<MaterialId, number>> = {},
+  preFiltered = false,
 ): ImpactPoint | null {
-  let candidates: ImpactPoint[]
-  if (surface === 'terre') {
+  /* preFiltered : `points` est DÉJÀ la liste des candidats pour `surface`
+     (partition mémorisée par l'appelant). On saute le filter — sinon il ré-alloue
+     un tableau de toute la grille à chaque grain, point chaud O(N) par grain. */
+  let candidates: ReadonlyArray<ImpactPoint>
+  if (preFiltered) {
+    candidates = points
+  } else if (surface === 'terre') {
     candidates = points.filter(p => {
       if (p.matériau === 'terre') return true
       return (surfaceDensities[p.matériau] ?? 1) <= 0
@@ -110,8 +116,10 @@ export function pickImpact(
 
   /* Pondération gaussienne : favorise les impacts dans un rayon autour du joueur.
      Les points très éloignés ont un poids négligeable, mais pas zéro.
-     σ (sigma) = 2.5 m — rayon de pertinence spatial. Calibrable. */
-  const sigma = 2.5
+     σ (sigma) = 10 m — rayon de pertinence spatial : les gouttes s'activent
+     jusqu'à ~10 m, en restant pondérées vers le joueur (le poids décroît
+     doucement, weight(10 m) ≈ 0,61, weight(5 m) ≈ 0,88). Calibrable. */
+  const sigma = 10
   const total = candidates.reduce((s, p) => {
     const dx = p.position.x - head.x
     const dz = p.position.z - head.z

@@ -18,6 +18,21 @@ const STEAL_FADE_S = 0.005 /* vol de voix : fade-out de 5 ms — inaudible, jama
 /* Facteur de débit Poisson par matériau — calibrable */
 const MAT_FACTOR = { metal: 1, bache: 1, terre: 1 }
 
+/* Plafond de grains générés PAR MATÉRIAU et PAR TICK, CALIBRÉ SUR LE POOL DE VOIX.
+   λ ∝ nombre de points exposés : sur un grand monde (size 25 → 2500 points, et
+   worldRadius ≈ r1 donc TOUT tombe en Couche 1), λ produit des dizaines de
+   milliers de grains/s qui se battent pour ~N voix L1 → vol de voix permanent.
+   Chaque grain coûte un pickImpact O(N) + (en cas de vol) un _cut Web Audio +
+   un nouveau BufferSource : c'est CE churn qui fige l'onglet, pas le rendu.
+   Le pool ne peut sonoriser que ~`voices` grains/frame ; au-delà tout est volé
+   donc inaudible. On borne à voices/nbMatériaux par matériau (réparti équitablement)
+   et on purge l'accumulateur pour éviter un backlog qui s'emballe. */
+function maxGrainsPerTick(voices) {
+  return Math.max(4, Math.ceil(voices / MATERIALS.length))
+}
+
+const EMPTY = Object.freeze([])
+
 /* ── Réservoir de cadence par matériau ───────────────────────────────────────*/
 class ImpactReservoir {
   constructor(capacity = 64) {
@@ -197,7 +212,7 @@ export class RainSampler {
   constructor(worldCfgOrSize = 380) {
     /* Rétrocompatibilité : accepte un nombre (ancienne API) ou un WorldConfig */
     const worldCfg = (typeof worldCfgOrSize === 'number')
-      ? makeWorldConfig({ preset: 'diorama', seed: 1, _size: worldCfgOrSize })
+      ? makeWorldConfig({ seed: 1 })
       : worldCfgOrSize
 
     this.cfg    = worldCfg
@@ -225,6 +240,12 @@ export class RainSampler {
     /* Accumulateurs Poisson par matériau (intervalle restant avant prochain impact) */
     this._poissonAcc = Object.fromEntries(MATERIALS.map(m => [m.id, 0]))
     this._poissonNext = Object.fromEntries(MATERIALS.map(m => [m.id, 0]))
+    /* Cadence L1 pilotée par le worklet-horloge (clock-processor) : la pluie ne
+       gèle plus quand l'onglet perd le focus. Paramètres météo poussés par l'UI
+       (setRainParams) et lus à chaque tick. clockDriven=false → fallback rAF. */
+    this._rainParams = { rain: false, metal: true, bache: true, density: 1 }
+    this.clockDriven = false
+    this._lastTick = null
     /* T-4.1 — Ring buffer SPSC (transitoire : game thread = audio thread) */
     this._ring = makeRing(1024)
     /* T-4.5 — Compteurs audio→game publiés à 30 Hz */
@@ -250,6 +271,9 @@ export class RainSampler {
       )
       await this.ctx.audioWorklet.addModule(
         new URL('./worklets/granulator-processor.js', import.meta.url)
+      )
+      await this.ctx.audioWorklet.addModule(
+        new URL('./worklets/clock-processor.js', import.meta.url)
       )
       this._workletReady = true
     } catch (e) {
@@ -314,10 +338,53 @@ export class RainSampler {
       onPromote: (voice, de, vers) => this._onPromote(voice, de, vers),
     })
 
+    /* Worklet-horloge : pilote tickPoisson (L1) depuis le thread audio, jamais
+       gelé quand l'onglet perd le focus. Sortie muette routée via un gain à 0
+       pour que le nœud reste « pull »é par le moteur. Si le worklet manque, on
+       reste en fallback rAF (clockDriven=false) — pluie dégradée mais jamais nulle. */
+    if (this._workletReady) {
+      this._clock = new AudioWorkletNode(this.ctx, 'clock-processor', {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+        processorOptions: { intervalMs: 16 },
+      })
+      const silent = this.ctx.createGain()
+      silent.gain.value = 0
+      this._clock.connect(silent).connect(this.ctx.destination)
+      this._clock.port.onmessage = (e) => this._onClockTick(e.data)
+      this.clockDriven = true
+    }
+
     this.ready = true
 
     /* Émet l'événement scale initial */
     this._emitScale()
+  }
+
+  /* Tick du worklet-horloge : exécute le Poisson L1 avec le dt audio réel.
+     Les paramètres météo (pluie/surfaces/densité) sont poussés par l'UI via
+     setRainParams — le tick n'a pas besoin de l'état React. */
+  _onClockTick(audioTime) {
+    if (!this.ready || this.ctx?.state === 'suspended') { this._lastTick = null; return }
+    /* dt mesuré sur l'horloge AUDIO (secondes) reçue du worklet : robuste aux
+       rafales de messages quand le thread principal stalle. Borné à 100 ms pour
+       éviter un pic de grains au retour d'un onglet longtemps masqué. */
+    if (this._lastTick == null) { this._lastTick = audioTime; return }
+    const dtMs = Math.min(100, (audioTime - this._lastTick) * 1000)
+    this._lastTick = audioTime
+    const rp = this._rainParams
+    if (!rp.rain) return
+    this.tickPoisson(dtMs, {
+      metal: rp.metal ? 1 : 0,
+      bache: rp.bache ? 1 : 0,
+      terre: 1,
+    }, rp.density)
+  }
+
+  /* Pousse les paramètres météo lus par le worklet-horloge à chaque tick. */
+  setRainParams(params) {
+    Object.assign(this._rainParams, params)
   }
 
   /* T-3.3 — Hook de démotion : coupe la voix héros + alimente le secteur. */
@@ -407,9 +474,9 @@ export class RainSampler {
   }
 
   _emitScale() {
-    const { preset, size } = this.cfg
+    const { size } = this.cfg
     const { r1, r2, overlap } = this.bands
-    this.recorder?.emit('scale', { preset, size, r1, r2, overlap })
+    this.recorder?.emit('scale', { size, r1, r2, overlap })
   }
 
   async _loadBank(name, urls) {
@@ -441,7 +508,7 @@ export class RainSampler {
 
   setListenerPosition(nx, ny, nz) {
     if (!this.scene) return
-    const world = headInputToWorld({ x: nx, y: ny, z: nz }, this.limit)
+    const world = headInputToWorld({ x: nx, y: ny, z: nz }, this.coords)
     this._headWorld = world
     this.scene.setListenerPosition(...worldToResonance(world))
   }
@@ -449,6 +516,22 @@ export class RainSampler {
   /* Boucle Poisson (game thread). Appelée chaque frame avec dtMs.
      surfaceDensities = { metal, bache, terre } : activité de chaque surface (0 ou 1).
      density = multiplicateur global (0..1) depuis l'UI. */
+  /* Partitionne les points d'impact par matériau, une seule fois par monde.
+     _byMat[mat]       : tous les points de ce matériau (candidats pickImpact)
+     _exposedCount[mat]: nombre de points exposés au ciel (débit Poisson λ) */
+  _rebuildImpactCache(pts) {
+    this._impactCachePts = pts
+    const byMat = {}
+    const exposedCount = {}
+    for (const m of MATERIALS) { byMat[m.id] = []; exposedCount[m.id] = 0 }
+    for (const p of pts) {
+      ;(byMat[p.matériau] ||= []).push(p)
+      if (p.expoCiel > 0) exposedCount[p.matériau] = (exposedCount[p.matériau] || 0) + 1
+    }
+    this._byMat = byMat
+    this._exposedCount = exposedCount
+  }
+
   tickPoisson(dtMs, surfaceDensities, density = 1) {
     if (!this.ready || !this.world || this.ctx?.state === 'suspended') return
     const rec = this.recorder
@@ -456,24 +539,33 @@ export class RainSampler {
     /* Seule lecture du monde, via l'interface WorldQuery (jamais terrain.material). */
     const pts = this.world.impactPoints()
 
+    /* Partition par matériau bakée UNE fois par monde (réf. stable de _baked) :
+       compte des points exposés + listes de candidats pour pickImpact. Évite de
+       re-filtrer 2500 points × matériaux à CHAQUE frame (l'ancien code le faisait). */
+    if (pts !== this._impactCachePts) this._rebuildImpactCache(pts)
+
+    const maxGrains = maxGrainsPerTick(this.cfg.layers.L1.voices)
+
     for (const m of MATERIALS) {
       const sid = m.id
       /* surfaceDensities[sid] : multiplicateur 0..1 (0 = surface coupée depuis l'UI). */
       const surfFactor = surfaceDensities[sid] ?? 1
       if (surfFactor <= 0) { this._poissonNext[sid] = 0; continue }
 
-      /* Surface exposée = nombre de points baked exposés pour ce matériau.
+      /* Surface exposée = nombre de points baked exposés pour ce matériau (cache).
          Pour 'terre' : inclut aussi les points dont le matériau overlay est désactivé
          (le sol sous un objet retiré de la scène redevient terre). */
-      let exposed
+      let exposed = this._exposedCount[sid] || 0
+      let candidates = this._byMat[sid] || EMPTY
       if (sid === 'terre') {
-        exposed = pts.filter(p => {
-          if (p.expoCiel <= 0) return false
-          if (p.matériau === 'terre') return true
-          return (surfaceDensities[p.matériau] ?? 1) <= 0
-        }).length
-      } else {
-        exposed = pts.filter(p => p.matériau === sid && p.expoCiel > 0).length
+        for (const om of MATERIALS) {
+          if (om.id === 'terre') continue
+          if ((surfaceDensities[om.id] ?? 1) <= 0) {
+            exposed += this._exposedCount[om.id] || 0
+            // concat ne mute pas le tableau caché : sûr de réaffecter.
+            candidates = candidates.concat(this._byMat[om.id] || EMPTY)
+          }
+        }
       }
       if (!exposed) continue
 
@@ -482,14 +574,18 @@ export class RainSampler {
 
       this._poissonAcc[sid] = (this._poissonAcc[sid] || 0) + dtMs
 
-      /* Tire autant d'impacts que l'intervalle de Poisson le permet */
+      /* Tire autant d'impacts que l'intervalle de Poisson le permet, dans la limite
+         du plafond audible (voir MAX_GRAINS_PER_TICK). */
+      let grains = 0
       while (this._poissonAcc[sid] >= this._poissonNext[sid]) {
+        if (grains >= maxGrains) { this._poissonAcc[sid] = 0; break }
+        grains++
         this._poissonAcc[sid] -= this._poissonNext[sid]
         /* Prochain intervalle : distribution exponentielle (−ln(u)/λ) */
         const u = Math.max(1e-9, this.prng.aléa())
         this._poissonNext[sid] = -Math.log(u) / λ
 
-        const point = pickImpact(pts, sid, this.prng, this._headWorld, surfaceDensities)
+        const point = pickImpact(candidates, sid, this.prng, this._headWorld, surfaceDensities, true)
         if (!point) continue
 
         const impactId = rec?.recording ? rec.nextImpactId() : 0

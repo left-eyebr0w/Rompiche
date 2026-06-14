@@ -8,7 +8,7 @@
        par intensité de la pluie (DENSITY_K) — rend L2 présente même sans impact.
 
    Valeurs résolues (§10) :
-     N             = cfg.layers.L2.sectors (résolu depuis preset × plateforme)
+     N             = cfg.layers.L2.sectors (résolu depuis le monde × plateforme)
      RAYON_SECTEUR = (r1 + r2) / 2
      CONTRIBUTION  = +2 grains/s par impact
      DECAY         = 0.85 par tick (~30 Hz)

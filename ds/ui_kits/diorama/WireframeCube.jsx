@@ -1,7 +1,8 @@
-import React, { useRef, useMemo, useLayoutEffect } from 'react'
+import React, { useRef, useMemo, useLayoutEffect, useEffect } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { makeCoords } from './coords.js'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { makeCoords, headInputToWorld, HEAD_FACES } from './coords.js'
 import { materialById } from './materials.js'
 
 /* Token colours (mirrors ds/tokens/colors.css — viewport context) */
@@ -139,11 +140,16 @@ function WorldScene({ size, half }) {
    Substrat STATIQUE dérivé du terrain. Rendu monochrome via SolidWire (face opaque
    + arêtes) : le matériau ne sert plus qu'au toggle de visibilité (concept audio/UX),
    pas à la couleur. */
+/* Relief — tous les blocs d'UN MÊME matériau sont FUSIONNÉS en une seule paire
+   (volume + arêtes), au lieu d'un mesh Three.js par bloc. Sur un monde dense
+   (size 25 → jusqu'à 625 blocs) on passe de ~1250 draw-calls à ~6, ce qui
+   supprime le freeze à l'ouverture de l'onglet. Les géométries fusionnées sont
+   disposées explicitement (useMemo seul ne libère pas le GPU). */
 function Relief({ terrain, half, metal, bache }) {
-  const blocks = useMemo(() => {
+  const groups = useMemo(() => {
     if (!terrain) return []
     const block = terrain.block
-    const out = []
+    const byMat = new Map() // matId → { boxes:[], edges:[] }
     for (let br = 0; br < terrain.brows; br++) {
       for (let bc = 0; bc < terrain.bcols; bc++) {
         const h = terrain.height[br * terrain.bcols + bc]
@@ -153,21 +159,37 @@ function Relief({ terrain, half, metal, bache }) {
         const cz = (br + 0.5) * block - half
         const matId = terrain.cellAt(cx, cz)?.material?.id ?? 'terre'
         const boxGeo = new THREE.BoxGeometry(block, hWorld, block)
+        boxGeo.translate(cx, -half + hWorld / 2, cz)
         const edges = new THREE.EdgesGeometry(boxGeo)
-        out.push({ box: boxGeo, edges, matId, pos: [cx, -half + hWorld / 2, cz] })
+        let g = byMat.get(matId)
+        if (!g) { g = { boxes: [], edges: [] }; byMat.set(matId, g) }
+        g.boxes.push(boxGeo)
+        g.edges.push(edges)
       }
+    }
+    const out = []
+    for (const [matId, g] of byMat) {
+      const box = mergeGeometries(g.boxes, false)
+      const edges = mergeGeometries(g.edges, false)
+      // Géométries intermédiaires fusionnées → libérables immédiatement.
+      g.boxes.forEach(b => b.dispose())
+      g.edges.forEach(e => e.dispose())
+      out.push({ matId, box, edges })
     }
     return out
   }, [terrain, half])
+
+  /* Libération GPU des géométries fusionnées au remplacement / démontage. */
+  useEffect(() => () => groups.forEach(g => { g.box.dispose(); g.edges.dispose() }), [groups])
 
   /* Visibilité par matériau (suit metal/bache ; terre toujours visible) */
   const visFor = { metal, bache, terre: true }
 
   return (
     <group>
-      {blocks.map((b, i) => (
-        <SolidWire key={i} box={b.box} edges={b.edges} position={b.pos}
-          color={C.wireDim} visible={visFor[b.matId] !== false} />
+      {groups.map(g => (
+        <SolidWire key={g.matId} box={g.box} edges={g.edges} position={[0, 0, 0]}
+          color={C.wireDim} visible={visFor[g.matId] !== false} />
       ))}
     </group>
   )
@@ -194,19 +216,25 @@ function Objects({ objects = [] }) {
 
 /* ── Cube-tête + auditeur + 6 points haut-parleurs ─────────────────────────── */
 function HeadCube({ size, head, listening }) {
-  const HC = Math.round(size * 0.26)
+  /* Repère partagé avec l'audio (coords.js) → tête visuelle et auditeur Resonance
+     occupent EXACTEMENT le même point monde (I5). HC vient de coords (1 m), plus
+     de round(size·0,26) recopié ici qui divergeait de l'échelle réelle. */
+  const coords = makeCoords(size)
+  const { HC } = coords
   const HCH = HC / 2
   const dotRef = useRef()
   const headGeo = useMemo(() => cubeEdges(HC), [HC])
   const dotRadius = Math.max(0.2, HC * 0.25)
-  const faceOffsets = [
-    [0, 0, HCH], [0, 0, -HCH], [HCH, 0, 0], [-HCH, 0, 0], [0, HCH, 0], [0, -HCH, 0],
-  ]
-
-  /* Repère partagé avec l'audio (coords.js) → tête visuelle et auditeur Resonance
-     occupent EXACTEMENT le même point monde (I5). */
-  const { limit } = makeCoords(size)
-  const pos = [head.x * limit, head.y * limit, -head.z * limit]
+  /* Points haut-parleurs dérivés des normales de HEAD_FACES (source unique, audio) :
+     l'indicateur d'avant (i === 0, blanc) tombe ainsi forcément sur la face FRONT
+     = −Z, comme LISTENER_FORWARD. Plus de table recopiée à la main qui se
+     désaligne du repère audio. */
+  const faceOffsets = HEAD_FACES.map(f => f.n.map(c => c * HCH))
+  /* Repère UNIQUE partagé avec l'audio : on RÉUTILISE headInputToWorld au lieu de
+     recopier x*limit / y*limit / -z*limit (qui ignorait l'ancrage de la tête à
+     hauteur d'oreille). La tête visuelle suit donc exactement l'auditeur Resonance (I5). */
+  const w = headInputToWorld(head, coords)
+  const pos = [w.x, w.y, w.z]
 
   /* listening pulse — scale du dot auditeur */
   useFrame(({ clock }) => {
@@ -307,7 +335,7 @@ function Rain({ half, size, rain, density, wind, windTilt, windRotation, windFor
    Un marqueur (octaèdre filaire + pied) par voix ACTIVE du pool, à sa position
    MONDE réelle. Couleur = matériau, taille + opacité = niveau RMS du grain. */
 function VoiceOverlay({ size, half, samplerRef }) {
-  const HC = Math.round(size * 0.26)
+  const { HC } = makeCoords(size)
   const markerSize = Math.max(0.3, HC * 0.8)
   const diamondGeo = useMemo(() => new THREE.EdgesGeometry(new THREE.OctahedronGeometry(markerSize)), [markerSize])
   const stemGeo = useMemo(() => new THREE.BufferGeometry().setFromPoints([

@@ -78,7 +78,6 @@ function dbStr(db) {
 export default function DebugHUD({ samplerRef, head, size,
   recording = false, traceCount = 0, onToggleRecord, onExport }) {
   const coords = React.useMemo(() => makeCoords(size), [size])
-  const { limit } = coords
 
   const [meters, setMeters] = React.useState([])
   const [master, setMaster] = React.useState(-Infinity)
@@ -118,7 +117,7 @@ export default function DebugHUD({ samplerRef, head, size,
 
   /* Face level computation — projection directionnelle des voix de chaque
      matériau (positions réelles, recalculées chaque frame) sur les 6 faces. */
-  const lw = headInputToWorld(head, limit)
+  const lw = headInputToWorld(head, coords)
   const listenerPos = [lw.x, lw.y, lw.z]
 
   const faceLevels = FACES.map(({ n }) => {

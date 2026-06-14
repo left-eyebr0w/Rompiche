@@ -11,15 +11,49 @@
 import { Terrain } from './Terrain.js'
 import type { MaterialId } from './materials.js'
 import type { WorldObject } from './objects.js'
-import type { DioramaStatePatch, Preset } from './state.js'
+import type { DioramaStatePatch } from './state.js'
 
 /* Version courante du schéma. À INCRÉMENTER à chaque changement de structure,
-   en ajoutant une branche dans migrate(). */
-export const SAVE_VERSION = 1 as const
+   en ajoutant une branche dans migrate(). v2 : grilles compressées RLE.
+   v3 : retrait du champ `preset` (Rompiche est un diorama unique). */
+export const SAVE_VERSION = 3 as const
+
+/* Grilles encodées en run-length : suite plate de paires [valeur, répétition].
+   Les terrains plats (vastes plages de même matériau / hauteur 0) se compressent
+   d'un facteur ~100. Décode en Uint8Array de longueur connue. */
+export type RleGrid = number[]
 
 export type TerrainPayload =
-  | { kind: 'flat-grid'; size: number; cell: number; block: number; material: number[]; height: number[] }
+  | { kind: 'flat-grid'; size: number; cell: number; block: number; material: RleGrid; height: RleGrid }
   // | { kind: 'sdf-chunks'; … }  ← P3, futur. La place est réservée par `kind`.
+
+/* ── Run-length encoding des grilles Uint8Array ───────────────────────────────
+   Format : [v0, n0, v1, n1, …] où vi répété ni fois. Σ ni = longueur d'origine. */
+export function rleEncode(arr: Uint8Array): RleGrid {
+  const out: number[] = []
+  let i = 0
+  while (i < arr.length) {
+    const v = arr[i]
+    let n = 1
+    while (i + n < arr.length && arr[i + n] === v) n++
+    out.push(v, n)
+    i += n
+  }
+  return out
+}
+
+export function rleDecode(rle: RleGrid): Uint8Array {
+  let len = 0
+  for (let k = 1; k < rle.length; k += 2) len += rle[k]
+  const out = new Uint8Array(len)
+  let p = 0
+  for (let k = 0; k < rle.length; k += 2) {
+    const v = rle[k], n = rle[k + 1]
+    out.fill(v, p, p + n)
+    p += n
+  }
+  return out
+}
 
 export interface WorldSave {
   version: number
@@ -28,7 +62,6 @@ export interface WorldSave {
   terrain: TerrainPayload
   objects: WorldObject[]
   seed: number
-  preset: Preset
   /** Sous-ensemble sérialisable de l'état UI (toggles, sliders, position…). */
   state: DioramaStatePatch
 }
@@ -38,7 +71,7 @@ export interface WorldSave {
 const SAVED_STATE_KEYS: (keyof DioramaStatePatch)[] = [
   'rain', 'wind', 'windTilt', 'windRotation', 'windForce',
   'metal', 'bache', 'x', 'y', 'z', 'density', 'gain',
-  'spin', 'zoom', 'clockMode', 'clockSegment', 'preset', 'seed', 'platform',
+  'spin', 'zoom', 'clockMode', 'clockSegment', 'seed', 'platform',
 ]
 
 function pickState(state: DioramaStatePatch): DioramaStatePatch {
@@ -67,13 +100,12 @@ export function serializeWorld(
       size: terrain.size,
       cell: terrain.cell,
       block: terrain.block,
-      /* Uint8Array → Array : sérialisable JSON tel quel. RLE repoussé à plus tard. */
-      material: Array.from(terrain.material),
-      height: Array.from(terrain.height),
+      /* Grilles compressées RLE (paires [valeur, répétition]) — sérialisable JSON. */
+      material: rleEncode(terrain.material),
+      height: rleEncode(terrain.height),
     },
     objects,
     seed: state.seed ?? 1,
-    preset: state.preset ?? 'diorama',
     state: pickState(state),
   }
 }
@@ -85,12 +117,24 @@ export function migrate(save: WorldSave): WorldSave {
   let s = save
   while (s.version < SAVE_VERSION) {
     switch (s.version) {
-      // case 1: s = migrate_1_to_2(s); break
+      case 2: s = migrate_2_to_3(s); break
       default:
         throw new Error(`[save] version inconnue ${s.version}`)
     }
   }
   return s
+}
+
+/* v2 → v3 : retrait du champ `preset`. Les anciennes saves portaient un preset
+   ('diorama'|'room'|…) ; on le supprime du payload racine et de l'état UI. */
+function migrate_2_to_3(save: WorldSave): WorldSave {
+  const next = { ...save, version: 3 } as WorldSave & { preset?: unknown }
+  delete next.preset
+  if (next.state && 'preset' in next.state) {
+    next.state = { ...next.state }
+    delete (next.state as Record<string, unknown>).preset
+  }
+  return next
 }
 
 export function deserializeWorld(save: WorldSave): { statePatch: DioramaStatePatch; terrain: Terrain } {
@@ -100,8 +144,8 @@ export function deserializeWorld(save: WorldSave): { statePatch: DioramaStatePat
   }
   const tp = s.terrain
   const terrain = new Terrain({ size: tp.size, cell: tp.cell, block: tp.block })
-  terrain.material = Uint8Array.from(tp.material)
-  terrain.height = Uint8Array.from(tp.height)
+  terrain.material = rleDecode(tp.material)
+  terrain.height = rleDecode(tp.height)
   return { statePatch: s.state, terrain }
 }
 

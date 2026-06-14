@@ -95,10 +95,7 @@ export class ReplayEngine {
     const t0 = ctx.currentTime
 
     /* Reconstruit le WorldConfig depuis le header */
-    const cfg = makeWorldConfig({
-      preset: this._header.meta?.preset ?? 'diorama',
-      seed:   this._header.seed,
-    })
+    const cfg = makeWorldConfig({ seed: this._header.seed })
     sampler.setScale(cfg)
 
     /* Trie et filtre les événements d'état (state/scale/weather) */

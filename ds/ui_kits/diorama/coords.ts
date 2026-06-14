@@ -3,9 +3,13 @@
    recopiées dans RainSampler, WireframeCube et DebugHUD. On les centralise ici
    pour garantir UN SEUL repère monde (celui de Three.js).
 
-   Échelle métrique : le cube de la tête vaut 1 m (HC unités-monde).
-     METER = HC          → 1 m
-     BLOCK = METER       → 1 m  (relief / objets)
+   Échelle métrique : 1 UNITÉ-MONDE = 1 MÈTRE (invariant cadrage-v1). L'échelle
+   est CONSTANTE, indépendante de `size` : agrandir le monde ajoute des cellules,
+   il ne les étire pas. (Auparavant METER = round(size·0,26), un hack viewport
+   qui ne valait 1 m qu'à size≈4 et faisait diverger les grilles aux autres tailles.)
+     METER = 1           → 1 m   (unité de base)
+     HC    = METER       → 1 m   (côté du cube de la tête)
+     BLOCK = METER       → 1 m   (relief / objets)
      CELL  = METER / 2   → 0,5 m (matériau de surface + résolution audio) */
 
 export interface Coords {
@@ -17,6 +21,7 @@ export interface Coords {
   METER: number
   BLOCK: number
   CELL: number
+  EAR: number
   worldRadius: number
 }
 
@@ -39,8 +44,9 @@ export interface HeadFace {
 
 export function makeCoords(size: number): Coords {
   const half = size / 2
-  const HC = Math.round(size * 0.26)
-  const METER = HC
+  const METER = 1            // 1 unité-monde = 1 mètre (constant, indépendant de size)
+  const HC = METER           // tête = cube de 1 m
+  const EAR = 1.6 * METER    // hauteur d'oreille au-dessus du sol (auditeur humain debout)
   return {
     size,
     half,
@@ -53,16 +59,28 @@ export function makeCoords(size: number): Coords {
     METER,
     BLOCK: METER,
     CELL: METER / 2,
+    EAR,
     worldRadius: half,         // rayon du monde en unités-monde (I5 — résoudreCouches)
   }
 }
 
-/* Axe Z de l'INPUT auditeur (sliders, normalisés [−1,1]) → monde Three.js.
-   L'axe Z de la tête est inversé par rapport au Z monde ; cette inversion vit
-   ICI et nulle part ailleurs, pour que le visuel et l'audio partagent le même
-   point de chute. */
-export function headInputToWorld({ x, y, z }: HeadInput, limit: number): Vector3 {
-  return { x: x * limit, y: y * limit, z: -z * limit }
+/* Input auditeur (sliders, normalisés [−1,1]) → monde Three.js.
+   - X/Z : course symétrique ±limit autour du centre. L'axe Z de la tête est
+     inversé par rapport au Z monde ; cette inversion vit ICI et nulle part
+     ailleurs, pour que visuel et audio partagent le même point de chute.
+   - Y : la hauteur de REPOS (y=0) est l'oreille d'un auditeur humain debout,
+     `ground + EAR` (≈ −half + 1,6 m), PAS le centre vertical du cube. Sans ça,
+     l'auditeur flotte à `half` du sol (12,5 m à size=25) et, sur sol plat, plus
+     aucun impact n'atteint r1 → tout part en L2, L1 muette (cf. note
+     analyse-routage-L1-echelle). Le slider monte depuis le sol (clamp bas) et
+     s'élève jusqu'à `ground + EAR + limit`. Repère UNIQUE partagé audio/visuel (I5). */
+export function headInputToWorld({ x, y, z }: HeadInput, coords: Coords): Vector3 {
+  const { limit, ground, EAR } = coords
+  return {
+    x: x * limit,
+    y: Math.max(ground, ground + EAR + y * limit),
+    z: -z * limit,
+  }
 }
 
 /* Monde Three.js → Resonance Audio. Conversion identité aujourd'hui : c'est le

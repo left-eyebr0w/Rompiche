@@ -2,7 +2,7 @@
    Source unique des presets et de la résolution des frontières de couches.
    Un seul endroit pour changer l'échelle du monde (I3, I5). */
 
-import type { Preset, Platform } from './state.js'
+import type { Platform } from './state.js'
 
 export interface L1Priority {
   w_gain: number
@@ -50,7 +50,6 @@ export interface WeatherConfig {
 
 export interface WorldConfig {
   size: number
-  preset: Preset
   seed: number
   platform: Platform
   ambisonicOrder: number
@@ -97,33 +96,25 @@ const COMMON = {
   L3: { ordre: 1, filtre: { centreHz: 1600, largeurHz: 4000 } },
 }
 
-export const PRESETS: Record<Preset, {
-  size: number
-  L1rMax: number
-  L2rMax: number
-  sectors: number
-  crossfade: number
-}> = {
-  diorama:   { size: 4,  L1rMax: 2.5, L2rMax: 10,   sectors: 8,  crossfade: 0.30 },
-  room:      { size: 12, L1rMax: 4,   L2rMax: 10,   sectors: 4,  crossfade: 0.25 },
-  courtyard: { size: 30, L1rMax: 5,   L2rMax: 22,   sectors: 8,  crossfade: 0.20 },
-  field:     { size: 80, L1rMax: 6,   L2rMax: 35,   sectors: 12, crossfade: 0.15 },
-}
+/* Échelle unique du monde (ex-preset « diorama »). La notion de preset a été
+   retirée : Rompiche est un diorama unique. Ces constantes sont la seule source
+   de l'échelle ; si un jour d'autres tailles reviennent, elles repasseront par
+   l'interface WorldQuery, pas par une table de presets recâblée partout. */
+const WORLD = { size: 25, L1rMax: 12, L2rMax: 20, sectors: 8, crossfade: 0.30 }
 
 /** Crée un WorldConfig complet. */
 export function makeWorldConfig(
-  { preset = 'diorama', seed = 1, platform }: { preset?: Preset; seed?: number; platform?: Platform } = {},
+  { seed = 1, platform }: { seed?: number; platform?: Platform } = {},
 ): WorldConfig {
-  const p  = PRESETS[preset] ?? PRESETS.diorama
+  const p  = WORLD
   const plat = platform ?? detectPlatform()
   const pl = PLATFORM_PRESETS[plat]
 
-  /* Le secteur count est le min de ce que le preset monde autorise et de la plateforme */
+  /* Le secteur count est le min de ce que le monde autorise et de la plateforme */
   const sectors = Math.min(p.sectors, pl.sectorsL2)
 
   return {
     size: p.size,
-    preset,
     seed,
     platform: plat,
     ambisonicOrder: pl.ambisonicOrder,

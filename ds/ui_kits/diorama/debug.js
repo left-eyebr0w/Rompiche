@@ -69,8 +69,8 @@ function buildTaps(sampler) {
     console.warn(
       '[debug] L2 sans secteurs : sampler.sectors._sectors est ' +
       (sectors ? 'vide' : 'undefined') +
-      ` (preset "${sampler.cfg?.preset}", N=${sampler.sectors?.N ?? 0}). ` +
-      'rms.l2 restera à 0 — tous les presets devraient avoir des secteurs désormais.'
+      ` (N=${sampler.sectors?.N ?? 0}). ` +
+      'rms.l2 restera à 0 — le monde devrait avoir des secteurs désormais.'
     )
   }
   for (const s of sectors ?? []) s.worklet.connect(l2)
@@ -194,9 +194,7 @@ export function installDebugApi({ getRecorder } = {}) {
 
     /* L2 — champ de secteurs (SectorField, instancié dans RainSampler.init()).
        count   = nombre de secteurs réellement instanciés (s.sectors._sectors)
-       configured = ce que le preset/plateforme prévoit (cfg.layers.L2.sectors)
-       Note : le preset « diorama » prévoit 0 secteur (L2 désactivée) — un count
-       de 0 y est donc l'état réel, pas un bug. */
+       configured = ce que le monde/plateforme prévoit (cfg.layers.L2.sectors) */
     const field = s.sectors
     const secList = field?._sectors ?? []
     const sectors = {

@@ -59,16 +59,16 @@ export default function DioramaApp() {
     spin: -32, zoom: 1,
     clockMode: 'sync', clockSegment: 'jour',
     debug: false,
-    preset: 'diorama', seed: 1,
+    seed: 1,
     platform: 'desktop',
   })
   const [time, setTime] = React.useState(now)
   const set = (patch) => setState(s => ({ ...s, ...patch }))
 
-  /* WorldConfig dérivé du preset/seed/platform courant — reconstruit si preset, seed ou platform change */
+  /* WorldConfig dérivé du seed/platform courant — reconstruit si seed ou platform change */
   const worldCfg = React.useMemo(
-    () => makeWorldConfig({ preset: state.preset ?? 'diorama', seed: state.seed ?? 1, platform: state.platform ?? 'desktop' }),
-    [state.preset, state.seed, state.platform],
+    () => makeWorldConfig({ seed: state.seed ?? 1, platform: state.platform ?? 'desktop' }),
+    [state.seed, state.platform],
   )
 
   /* Terrain (couche 1) — recalculé avec la taille du worldCfg */
@@ -129,6 +129,8 @@ export default function DioramaApp() {
     /* Initialise la nappe diffuse avec l'état météo courant */
     const st = stateRef.current
     s.setWeather({ intensité: st.rain ? st.density : 0, vent: st.windForce, dir: st.windRotation })
+    /* Amorce les paramètres lus par le worklet-horloge (cadence L1). */
+    s.setRainParams({ rain: st.rain, metal: st.metal, bache: st.bache, density: st.density })
   }, [])
 
   React.useEffect(() => {
@@ -139,7 +141,7 @@ export default function DioramaApp() {
     samplerRef.current?.suspend()
   }, [state.listening, initSampler])
 
-  /* T-1.5b — Mise à jour d'échelle quand preset ou seed change.
+  /* T-1.5b — Mise à jour d'échelle quand seed ou plateforme change.
      Recalcule les bandes (r1/r2) et bascule la nappe en mode mince si diorama. */
   React.useEffect(() => {
     const s = samplerRef.current
@@ -183,7 +185,7 @@ export default function DioramaApp() {
      Champs d'état suivis en delta (journalisés au changement, jamais dupliqués
      sur chaque goutte). Le snapshot initial à l'ouverture pose la version 1. */
   const TRACKED = ['rain', 'wind', 'windTilt', 'windRotation', 'windForce',
-    'metal', 'bache', 'x', 'y', 'z', 'density', 'gain', 'preset', 'seed']
+    'metal', 'bache', 'x', 'y', 'z', 'density', 'gain', 'seed']
   const snapshot = (st) => Object.fromEntries(TRACKED.map(k => [k, st[k]]))
   const trackedRef = React.useRef(null)
 
@@ -280,8 +282,17 @@ export default function DioramaApp() {
     return () => clearInterval(id)
   }, [])
 
-  /* Boucle Poisson (game thread) : pilote les impacts audio indépendamment du visuel.
-     La pluie sonne même si le viewport est masqué (découplage audio/visuel T-0.H1). */
+  /* Paramètres météo poussés au worklet-horloge qui pilote la cadence L1 sur le
+     thread audio (la pluie ne gèle plus quand l'onglet perd le focus). */
+  React.useEffect(() => {
+    samplerRef.current?.setRainParams({
+      rain: state.rain, metal: state.metal, bache: state.bache, density: state.density,
+    })
+  }, [state.rain, state.metal, state.bache, state.density])
+
+  /* Fallback Poisson rAF : ne tourne QUE si le worklet-horloge est absent
+     (clockDriven=false). Sinon le tick L1 est piloté par clock-processor et
+     cette boucle est inerte. La pluie sonne donc toujours, worklet ou non. */
   React.useEffect(() => {
     let rafId, lastTime = performance.now()
     const loop = (now) => {
@@ -290,7 +301,7 @@ export default function DioramaApp() {
       lastTime = now
       const s = samplerRef.current
       const st = stateRef.current
-      if (!s?.ready || !st.listening || !st.rain) return
+      if (!s?.ready || s.clockDriven || !st.listening || !st.rain) return
       const surfaceDensities = {
         metal: st.metal ? 1 : 0,
         bache: st.bache ? 1 : 0,

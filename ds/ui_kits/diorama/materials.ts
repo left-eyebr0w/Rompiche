@@ -33,19 +33,20 @@ const sampleUrls: Record<MaterialId, string[]> = {
 }
 
 /* maxDistance : au-delà, Resonance coupe NET à zéro (gain = 0, cf.
-   attenuation.js). Le monde fait ~3,8 m de côté soit ~5,4 m en diagonale :
-   avec l'ancien 4 m, une tête excentrée rendait toute une bande de pluie
-   muette (trous rythmiques + niveau global en berne, masqué tant que les
-   grains étaient joués depuis l'impact le plus proche du secteur). 8 m
-   couvre la diagonale avec de la marge et adoucit la pente. À calibrer.
+   attenuation.js). DOIT couvrir le rayon de la couche héros L1 : une voix est
+   routée en héros tant que dist < r1 − overlap (≈ 9,6 m sur le préset diorama,
+   r1 = 12 m). Avec METER = 1 (1 u = 1 m), une valeur en dessous de r1 rendait
+   muettes 20-25 % des voix héros pourtant affichées par le HUD (qui lit le grain
+   AVANT spatialisation) — tête excentrée → tout un côté du monde silencieux.
+   14 m couvre r1 avec marge. À recalibrer si L1rMax change.
 
    debugColor : couleur de DIAGNOSTIC (overlay debug des voix). En vue normale,
    le wireframe est monochrome — le matériau ne pilote AUCUNE couleur de scène.
    Cette teinte ne vit que dans VoiceOverlay (Ctrl+Alt+D). Source unique : ici. */
 export const MATERIALS: Material[] = [
-  { id: 'metal', label: 'Métal', urls: sampleUrls.metal, gain: 1, minDistance: 0.5, maxDistance: 8, debugColor: 0xe8c96d },
-  { id: 'bache', label: 'Bâche', urls: sampleUrls.bache, gain: 1, minDistance: 0.5, maxDistance: 8, debugColor: 0x7ec8e3 },
-  { id: 'terre', label: 'Terre', urls: sampleUrls.terre, gain: 1, minDistance: 0.5, maxDistance: 8, debugColor: 0x9ae87a },
+  { id: 'metal', label: 'Métal', urls: sampleUrls.metal, gain: 1, minDistance: 0.5, maxDistance: 14, debugColor: 0xe8c96d },
+  { id: 'bache', label: 'Bâche', urls: sampleUrls.bache, gain: 1, minDistance: 0.5, maxDistance: 14, debugColor: 0x7ec8e3 },
+  { id: 'terre', label: 'Terre', urls: sampleUrls.terre, gain: 1, minDistance: 0.5, maxDistance: 14, debugColor: 0x9ae87a },
 ]
 
 /* id → indice dans MATERIALS (pour les Uint8Array du terrain) */
