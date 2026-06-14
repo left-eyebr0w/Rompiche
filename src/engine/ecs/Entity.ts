@@ -38,7 +38,12 @@ export interface Voice {
   sample: number
   /** Désaccord du grain (cents/ratio). */
   grain: number
+  /** Gain COMMANDÉ (dB) — sert à la priorité de vol de voix (0 pour les héros). */
   gainDb: number
+  /** Niveau MESURÉ (dB) du grain en cours, via AnalyserNode par voix (audioSync).
+     Distinct de gainDb : c'est l'amplitude réelle pour le debug (matériaux, faces).
+     -Infinity quand la voix est silencieuse / en headless (pas d'audio). */
+  levelDb: number
   busy: boolean
   /** Distance à l'auditeur (m), au moment de l'acquisition (pour priorité). */
   dist: number

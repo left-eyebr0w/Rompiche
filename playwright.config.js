@@ -23,7 +23,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'npx vite --port 5173',
-    url: 'http://localhost:5173/ds/ui_kits/diorama/index.html',
+    url: 'http://localhost:5173/src/index.html',
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },

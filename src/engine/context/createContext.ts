@@ -71,6 +71,7 @@ export function createHeadlessContext(opts: HeadlessOptions = {}): EngineContext
       terre: { acc: 0, next: 0, rr: 0 },
     },
     frame: { impacts: [], demotions: [], grainOnsets: [] },
+    faceLevels: [-Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity],
     input: emptyInput(),
     // audio / render : absents en headless (optionnels, §2.1)
   }

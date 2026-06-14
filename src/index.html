@@ -3,13 +3,21 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Rompiche — J3</title>
-  <style> html,body{margin:0;height:100%;background:#000;color:#fff;font-family:monospace} </style>
+  <title>Rompiche — J5</title>
+  <link rel="stylesheet" href="../ds/styles.css" />
+  <style>
+    html,body{margin:0;height:100%;background:#000;color:#fff;font-family:monospace}
+    #root{position:relative;width:100%;height:100%;overflow:hidden}
+    #root canvas{display:block;width:100%;height:100%}
+    #ui{position:absolute;inset:0;z-index:1}
+    #overlay{position:absolute;top:8px;left:50%;transform:translateX(-50%);padding:6px 12px;background:rgba(0,0,0,0.6);border-radius:4px;cursor:pointer;z-index:10;user-select:none}
+  </style>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
-  <div id="root">
-    <p>Cliquez pour démarrer l'audio...</p>
-  </div>
-  <script type="module" src="./main.ts"></script>
+<div id="root">
+  <div id="ui"></div>
+</div>
+<script type="module" src="./main.ts"></script>
 </body>
 </html>

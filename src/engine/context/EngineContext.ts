@@ -70,6 +70,8 @@ export interface EngineContext {
   poisson: Record<MaterialId, PoissonState>
   /** Tampons de frame mono-tick, vidés en début de tick. */
   frame: FrameEvents
+  /** Niveaux directionnels des 6 faces de la tête (projetés par FaceProjectionSystem). */
+  faceLevels: [number, number, number, number, number, number]
   input: InputChannels
   /* Adaptateurs liés au DOM / AudioContext : injectés par la platform au démarrage,
      LÉGITIMEMENT ABSENTS en test headless (le cœur tourne sans audio ni rendu, §2.1). */

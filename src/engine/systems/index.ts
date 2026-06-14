@@ -5,36 +5,47 @@
    `trigger` route les impacts lointains et RETOURNE avant `pool.play`. (Diffère de
    l'ordre purement illustratif de §3.4.) */
 
+import { createInputSystem, type InputSystemDeps } from './input.js'
 import { createRainPoissonSystem } from './rainPoisson.js'
 import { createLodRoutingSystem } from './lodRouting.js'
 import { createVoicePoolSystem } from './voicePool.js'
 import { createAudioSyncSystem } from './audioSync.js'
+import { createRenderSyncSystem } from './renderSync.js'
+import { createFaceProjectionSystem } from './faceProjection.js'
 import type { System } from '../loop/loop.js'
 import type { EngineContext } from '../context/EngineContext.js'
 import type { GameWorld } from '../ecs/world.js'
 import type { Banks } from '../../audio/banks.js'
+import type { ThreeRenderer } from '../../render/ThreeRenderer.js'
 
 /** Construit les systèmes de simulation pure (pas d'audio ni rendu), liés au World. */
-export function createSimSystems(world: GameWorld, ctx: EngineContext): System[] {
+export function createSimSystems(world: GameWorld, ctx: EngineContext, inputDeps?: InputSystemDeps): System[] {
   return [
+    createInputSystem(ctx, inputDeps ?? { world }),
     createRainPoissonSystem(world, ctx),
     createLodRoutingSystem(),
     createVoicePoolSystem(world, ctx),
   ]
 }
 
-/** Construit les systèmes de simulation + audio, liés au World.
-    AudioSyncSystem tourne APRÈS VoicePoolSystem (qui pousse onsets/demotions). */
+/** Construit les systèmes de simulation + audio + rendu, liés au World.
+    AudioSyncSystem tourne APRÈS VoicePoolSystem (qui pousse onsets/demotions).
+    RenderSyncSystem tourne en dernier (n'affecte ni la simu ni l'audio). */
 export function createEngineSystems(
   world: GameWorld,
   ctx: EngineContext,
   banks: Banks,
   audioCtx: AudioContext,
+  renderer?: ThreeRenderer,
+  inputDeps?: InputSystemDeps,
 ): System[] {
-  return [
-    ...createSimSystems(world, ctx),
+  const systems: System[] = [
+    ...createSimSystems(world, ctx, { world, audioCtx, ...inputDeps }),
     createAudioSyncSystem(world, ctx, banks, audioCtx),
   ]
+  if (renderer) systems.push(createRenderSyncSystem(renderer, world))
+  systems.push(createFaceProjectionSystem(world))
+  return systems
 }
 
 /** Peuple le World : un émetteur de pluie global + le pool de voix (taille = cfg L1). */
@@ -49,6 +60,7 @@ export function setupSimWorld(world: GameWorld, ctx: EngineContext, density = 0.
         sample: 0,
         grain: 0,
         gainDb: 0,
+        levelDb: -Infinity,
         busy: false,
         dist: 0,
         pos: { x: 0, y: 0, z: 0 },

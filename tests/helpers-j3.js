@@ -3,7 +3,8 @@ const J3_PATH = '/src/index.html'
 export async function gotoJ3(page) {
   await page.goto(J3_PATH)
   await page.waitForFunction(() => !!window.__rompiche)
-  await page.locator('#root').click()
+  await page.waitForSelector('#overlay')
+  await page.locator('#overlay').click()
   await page.waitForFunction(() => {
     const r = window.__rompiche
     return r && r.rms && r.rms.master > 1e-4
@@ -54,6 +55,9 @@ export function setHeadPosition(page, x, y, z) {
 
 export function setSurface(page, id, on) {
   return page.evaluate(({ id, on }) => {
-    window.__rompiche.ctx.surfaces[id] = on ? 1 : 0
+    const ctx = window.__rompiche.ctx
+    ctx.surfaces[id] = on ? 1 : 0
+    if (id === 'metal') ctx.input.controls.metal = on
+    if (id === 'bache') ctx.input.controls.bache = on
   }, { id, on })
 }

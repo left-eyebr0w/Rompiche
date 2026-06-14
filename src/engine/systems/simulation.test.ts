@@ -29,7 +29,9 @@ function runSim(
 ): SimResult {
   const clock = new ManualClock()
   const ctx = createHeadlessContext({ seed, clock })
-  Object.assign(ctx.surfaces, surfaces)
+  /* Via InputSystem : les surfaces sont pilotées par ctx.input.controls. */
+  if (surfaces.metal !== undefined) ctx.input.controls.metal = surfaces.metal > 0
+  if (surfaces.bache !== undefined) ctx.input.controls.bache = surfaces.bache > 0
   if (dropletRate !== undefined) ctx.worldConfig.dropletRate = dropletRate
 
   const world = createWorld()

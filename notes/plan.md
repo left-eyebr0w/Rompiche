@@ -50,14 +50,14 @@ Détail dans [architecture.md](architecture.md).
 
 ## 3. Les chantiers
 
-### 🔧 Le Grand Refactor — *passe avant tout* 🏗️ J0/J1/J2/J3 ✅
+### 🔧 Le Grand Refactor — *passe avant tout* 🏗️ J0/J1/J2/J3/J4 ✅
 La refonte holistique qui amène le code à l'architecture cible : TypeScript complet, moteur
 sorti de React, boucle de jeu à pas fixe, ECS (Miniplex), rendu three.js impératif (abandon
 de React Three Fiber), et bascule audio de Resonance (abandonné) vers Web Audio natif.
 Organisé en jalons J0→J6, validés à l'oreille + tests qui grandissent (détail : [grand-refactor.md](grand-refactor.md)).
 - **Dépend de** : rien (point de départ).
-- **État** : ✅ J0 (coutures), J1 (boucle headless), J2 (simulation pure), J3 (audio Resonance) complétés, `tsc` vert, 19 tests passent (16 unitaires + 3 E2E J3).
-- **Prochain** : J4 (rendu three.js impératif).
+- **État** : ✅ J0 (coutures), J1 (boucle headless), J2 (simulation pure), J3 (audio Resonance), J4 (rendu three.js) complétés. `tsc` vert, 21 tests unitaires + 3 E2E J3 passent.
+- **Prochain** : J5 (UI React) → J6 (swap Web Audio).
 - **Fini quand** : J6 complet — tests garde-fous re-verts, `tsc` vert, architecture cible en place, v0 retirée.
 
 ### 🎨 L'édition du terrain

@@ -6,7 +6,7 @@ export default defineConfig({
   root: '.',
   build: {
     rollupOptions: {
-      input: 'ds/ui_kits/diorama/index.html',
+      input: 'src/index.html',
     },
   },
 })

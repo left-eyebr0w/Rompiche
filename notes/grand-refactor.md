@@ -5,7 +5,7 @@
 > perdre le seul code qui sonne juste*. C'est le découpage fin annoncé par [plan.md §5](plan.md).
 
 **Dernière mise à jour** : 14 juin 2026
-**Statut** : 🏗️ JALONS J0/J1/J2/J3 COMPLÉTÉS — J4 à démarrer (rendu three.js impératif).
+**Statut** : ✅ J0/J1/J2/J3/J4 COMPLÉTÉS — J5 à démarrer (UI React).
 
 ---
 
@@ -101,11 +101,28 @@ v0 (`ds/ui_kits/diorama`) qui tourne encore — bascule réelle au J5.
   **preuve que la restructuration cœur/ECS n'a rien cassé**.
 
 ### J4 — Rendu three.js impératif (abandon R3F)
-**⏳ PROCHAIN**
+**✅ COMPLÉTÉ**
 - **Livrable** : `RenderSyncSystem` → `ThreeRenderer` via `RenderTarget` ; meshes de relief en
   cache (corrige la dette reconnaissance-v0). Interface `RenderTarget` déjà définie.
-- **Auto** (neuf) : smoke test de montage de scène (headless/jsdom au mieux possible).
-- **Humain** : wireframe et caméra orbitale (spin/zoom, **sans** affecter l'écoute) corrects.
+- **Auto** (neuf) : ✅ 5 tests unitaires de `computeCameraPosition` (orbit caméra).
+- **Humain** : ✅ wireframe + relief mergé + cube tête pulse + orbite molette/drag — tout fonctionne.
+
+#### Découpage J4
+
+| # | Fichier | Action | Détail |
+|---|---------|--------|--------|
+| 1 | `src/render/ThreeRenderer.ts` | **Créer** | Implémentation de `RenderTarget` (three.js impératif). Construit les géométries statiques (cube monde, grille sol, relief mergé par matériau, cube tête + 6 faces). Stocke `spin`/`zoom`/`headPosition` comme propriétés internes mutables. `draw(world, alpha)` calcule la caméra orbitale (tilt 22.5° fixe) et positionne le cube tête + pulse. |
+| 2 | `src/engine/systems/renderSync.ts` | **Créer** | Pont ECS → ThreeRenderer. Lit `listenerWorld(ctx)` (`head.ts`), définit la position tête sur le renderer, appelle `ctx.render.draw()`. Pas d'entité ECS tête en J4 (viendra en J5 avec InputSystem). |
+| 3 | `src/render/threeRenderer.test.ts` | **Créer** | Smoke test : extrait `computeCameraPosition()` en fonction pure et la teste. Constructeur minimale avec DOM mocké. |
+| 4 | `src/main.ts` | **Modifier** | Crée `ThreeRenderer` avec `(ctx.coords.size, ctx.coords, terrain)`, l'injecte dans `ctx.render`. Ajoute `renderSyncSystem` aux systèmes. Handlers DOM : `mousedown→mousemove` pour spin, `wheel` pour zoom (Ctrl+). |
+| 5 | `src/index.html` | **Modifier** | `<title>Rompiche — J4</title>`, `#root { position: relative }` pour superposition texte au canvas. |
+| 6 | `src/engine/systems/index.ts` | **Modifier** | Exporte `createRenderSystem()` en dernière position. |
+
+#### Décisions de design J4
+- **Entité tête ECS** : pas encore — on continue via `listenerWorld(ctx)` (J5 créera `{ transform, listener }`).
+- **Spin/zoom** : vivent dans ThreeRenderer (propriétés), pilotés par handlers DOM dans `main.ts`. En J5 ils migrent dans le state UI React (§6 archi).
+- **Rain particules visuelles** : hors scope J4 (J5+).
+- **Pulse tête** : inclus — scale sinusoïdal `1 + 0.03 * sin(time * 3)` quand `listening` est vrai.
 
 ### J5 — UI React = observateur/émetteur ; **bascule** v0 → src
 **⏳ APRÈS J4**

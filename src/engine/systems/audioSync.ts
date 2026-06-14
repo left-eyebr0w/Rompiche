@@ -19,16 +19,34 @@ export function createAudioSyncSystem(
   const pool = world.with('voice')
   const sources = new Map<number, SpatialSource>()
   const grains = new Map<number, ActiveGrain>()
+  /* Un AnalyserNode par voix : mesure le RMS RÉEL du grain (post grain-gain,
+     pré-spatialisation), comme la v0 (RainSampler.level). Alimente voice.levelDb. */
+  const analysers = new Map<number, AnalyserNode>()
+  const measureBuf = new Float32Array(256)
+
+  function rmsDb(an: AnalyserNode): number {
+    an.getFloatTimeDomainData(measureBuf)
+    let sq = 0
+    for (let i = 0; i < measureBuf.length; i++) sq += measureBuf[i] * measureBuf[i]
+    const rms = Math.sqrt(sq / measureBuf.length)
+    return rms < 1e-8 ? -Infinity : 20 * Math.log10(rms)
+  }
 
   return () => {
     const backend = ctx.audio
     if (!backend) return
 
-    /* 1) Créer une SpatialSource par voix (paresseux, 1 seul appel). */
+    /* 1) Créer une SpatialSource + un AnalyserNode par voix (paresseux). */
     for (const e of pool) {
       const id = e.voice!.id
       if (!sources.has(id)) {
-        sources.set(id, backend.createSource())
+        const src = backend.createSource()
+        sources.set(id, src)
+        const an = audioCtx.createAnalyser()
+        an.fftSize = 256
+        an.smoothingTimeConstant = 0
+        an.connect(src.input)
+        analysers.set(id, an)
       }
     }
 
@@ -73,7 +91,8 @@ export function createAudioSyncSystem(
       const grainGain = audioCtx.createGain()
       grainGain.gain.value = 1
 
-      grainSrc.connect(grainGain).connect(src.input)
+      const an = analysers.get(o.voice)
+      grainSrc.connect(grainGain).connect(an ?? src.input)
       grainSrc.start()
 
       const vid = o.voice
@@ -86,12 +105,14 @@ export function createAudioSyncSystem(
       grains.set(vid, { source: grainSrc, gain: grainGain })
     }
 
-    /* 4) Positionner les sources spatiales des voix actives. */
+    /* 4) Positionner les sources + mesurer le niveau RÉEL de chaque voix. */
     for (const e of pool) {
       const v = e.voice!
-      if (!v.busy) continue
+      if (!v.busy) { v.levelDb = -Infinity; continue }
       const src = sources.get(v.id)
       if (src) src.setPosition(v.pos)
+      const an = analysers.get(v.id)
+      v.levelDb = an ? rmsDb(an) : -Infinity
     }
 
     /* 5) Positionner l'auditeur (depuis les contrôles). */
