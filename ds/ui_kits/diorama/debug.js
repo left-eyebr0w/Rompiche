@@ -230,7 +230,21 @@ export function installDebugApi({ getRecorder } = {}) {
     },
   }
 
-  window.__rompiche = { rms, voices, trace, seed, scene, sampler }
+  /* Répartition spatiale L1 héros (cfg.l1Field) — lecture/écriture EN DIRECT.
+     get() → copie ; set(partial) → mute les champs fournis (lus au prochain tick). */
+  const field = {
+    get() { return _sampler?.cfg?.l1Field ? { ..._sampler.cfg.l1Field } : null },
+    set(partial) {
+      const f = _sampler?.cfg?.l1Field
+      if (!f || !partial) return null
+      for (const k of ['rate', 'core', 'sigma', 'p', 'floor', 'ky']) {
+        if (typeof partial[k] === 'number') f[k] = partial[k]
+      }
+      return { ...f }
+    },
+  }
+
+  window.__rompiche = { rms, voices, trace, seed, scene, sampler, field }
 }
 
 /* Enregistre le sampler actif : construit les taps RMS et applique un seed

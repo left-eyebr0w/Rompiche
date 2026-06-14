@@ -59,6 +59,7 @@ export default function DioramaApp() {
     spin: -32, zoom: 1,
     clockMode: 'sync', clockSegment: 'jour',
     debug: false,
+    fieldViz: false,
     seed: 1,
     platform: 'desktop',
   })
@@ -391,6 +392,8 @@ export default function DioramaApp() {
           traceCount={traceCount}
           onToggleRecord={toggleRecording}
           onExport={exportTrace}
+          fieldViz={state.fieldViz}
+          onToggleFieldViz={() => set({ fieldViz: !state.fieldViz })}
         />
       )}
       <div className="dio__view" ref={viewRef}
@@ -406,7 +409,7 @@ export default function DioramaApp() {
           density={state.density} wind={state.wind}
           windTilt={state.windTilt} windRotation={state.windRotation} windForce={state.windForce}
           onImpact={state.listening && state.rain ? handleImpact : null}
-          samplerRef={samplerRef} debug={state.debug}
+          samplerRef={samplerRef} debug={state.debug} fieldViz={state.fieldViz}
         />
         <div className="dio__scrim" />
         <div className="dio__top">

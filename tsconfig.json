@@ -30,7 +30,8 @@
     "declarationMap": false
   },
   "include": [
-    "ds/ui_kits/diorama/**/*"
+    "ds/ui_kits/diorama/**/*",
+    "src/**/*"
   ],
   "exclude": [
     "node_modules",

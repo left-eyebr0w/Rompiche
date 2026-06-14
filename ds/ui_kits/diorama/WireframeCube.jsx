@@ -382,13 +382,84 @@ function VoiceOverlay({ size, half, samplerRef }) {
   return <group ref={groupRef} visible={false} />
 }
 
+/* ── Overlay 3D de la PDF L1 héros (répartition spatiale des gouttes) ──────────
+   Coquilles iso-poids concentriques centrées sur la tête, matérialisant la PDF
+   réglée par les sliders (cfg.l1Field). Poids :
+     w(d) = floor + (1−floor)·exp(−0.5·(max(0,d−core)/σ)^p),  d² = dx² + dz² + (ky·dy)²
+   Une iso-surface au poids wt est l'ensemble {d = R(wt)} → en monde une ELLIPSOÏDE
+   de demi-axe horizontal R et de demi-axe vertical R/ky (ky→0 ⇒ colonne très haute,
+   le cas 2D). Lu chaque frame : bouger un slider met les coquilles à jour en direct. */
+const FIELD_SHELLS = [0.75, 0.5, 0.25, 0.1] // poids iso matérialisés (intérieur→extérieur)
+const FIELD_COLOR = 0xe8c96d                // or (cohérent avec le panneau debug)
+
+/* Rayon (distance d) de l'iso-surface au poids wt, ou null si inatteignable
+   (wt ≤ floor : la coquille partirait à l'infini → on ne la dessine pas).
+   Le cœur (core) décale l'iso-surface vers l'extérieur : d = core + σ·(−2·ln num)^(1/p). */
+function shellRadius(wt, core, sigma, p, floor) {
+  const num = (wt - floor) / (1 - floor)
+  if (!(num > 0) || num >= 1) return null
+  return core + sigma * Math.pow(-2 * Math.log(num), 1 / p)
+}
+
+function FieldOverlay({ size, head, samplerRef }) {
+  const coords = useMemo(() => makeCoords(size), [size])
+  const half = size / 2
+  const sphereGeo = useMemo(() => new THREE.SphereGeometry(1, 20, 14), [])
+  const groupRef = useRef()
+  const shellRefs = useRef([])
+
+  /* Position monde de la tête, rafraîchie à chaque rendu (lue dans useFrame). */
+  const cb = useRef()
+  const w = headInputToWorld(head, coords)
+  cb.current = { hx: w.x, hy: w.y, hz: w.z }
+
+  useFrame(() => {
+    const grp = groupRef.current
+    const f = samplerRef?.current?.cfg?.l1Field
+    if (!grp || !f) { if (grp) grp.visible = false; return }
+    grp.visible = true
+    const { hx, hy, hz } = cb.current
+    grp.position.set(hx, hy, hz)
+    const sigma = Math.max(0.1, f.sigma)
+    const core = Math.max(0, f.core || 0)
+    const kv = Math.max(0.04, f.ky) // borne basse → ky=0 dessiné comme colonne très haute
+    for (let i = 0; i < FIELD_SHELLS.length; i++) {
+      const wt = FIELD_SHELLS[i]
+      const mk = shellRefs.current[i]
+      if (!mk) continue
+      const R = shellRadius(wt, core, sigma, f.p, f.floor)
+      if (R == null || R < 1e-3) { mk.mesh.visible = false; continue }
+      mk.mesh.visible = true
+      const vR = Math.min(R / kv, half * 1.5) // demi-axe vertical (plafonné à l'emprise du monde)
+      mk.mesh.scale.set(R, vR, R)
+      mk.mat.opacity = 0.06 + 0.20 * wt // plus opaque au centre (poids fort)
+    }
+  })
+
+  return (
+    <group ref={groupRef} visible={false}>
+      {FIELD_SHELLS.map((wt, i) => (
+        <mesh
+          key={wt}
+          ref={(m) => {
+            if (m) shellRefs.current[i] = { mesh: m, mat: m.material }
+          }}
+          geometry={sphereGeo}
+        >
+          <meshBasicMaterial color={FIELD_COLOR} wireframe transparent opacity={0.15} depthWrite={false} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
 /* ── Composant racine — interface identique à l'ancien WireframeCube ─────────── */
 export default function WireframeCube({
   size = 360, terrain = null, objects = [], head = { x: 0, y: 0, z: 0 },
   rain = true, metal = true, bache = true, listening = false,
   spin = -32, zoom = 1, density = 0.5, wind = false, windTilt = 0.5, windRotation = 0, windForce = 0.5,
   onImpact = null,
-  samplerRef = null, debug = false,
+  samplerRef = null, debug = false, fieldViz = false,
 }) {
   const half = size / 2
   return (
@@ -409,6 +480,7 @@ export default function WireframeCube({
         terrain={terrain} metal={metal} bache={bache} onImpact={onImpact}
       />
       {debug && <VoiceOverlay size={size} half={half} samplerRef={samplerRef} />}
+      {debug && fieldViz && <FieldOverlay size={size} head={head} samplerRef={samplerRef} />}
     </Canvas>
   )
 }

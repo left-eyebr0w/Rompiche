@@ -237,9 +237,15 @@ export class RainSampler {
     this.recorder = null
     /* Round-robin seedé par matériau (évite Math.random dans le chemin audio) */
     this._rr = Object.fromEntries(MATERIALS.map(m => [m.id, 0]))
-    /* Accumulateurs Poisson par matériau (intervalle restant avant prochain impact) */
+    /* Accumulateurs Poisson par matériau (intervalle restant avant prochain impact).
+       Deux flux DÉCOUPLÉS (suffixe H = héros L1) : bulk → L2/L3, héros → L1. */
     this._poissonAcc = Object.fromEntries(MATERIALS.map(m => [m.id, 0]))
     this._poissonNext = Object.fromEntries(MATERIALS.map(m => [m.id, 0]))
+    this._poissonAccH = Object.fromEntries(MATERIALS.map(m => [m.id, 0]))
+    this._poissonNextH = Object.fromEntries(MATERIALS.map(m => [m.id, 0]))
+    /* Répartition spatiale L1 héros — réglable live (debug). Sécurité si cfg ancien. */
+    this.cfg.l1Field = this.cfg.l1Field || { rate: 60, core: 0, sigma: 10, p: 2, floor: 0.02, ky: 1 }
+    if (this.cfg.l1Field.core == null) this.cfg.l1Field.core = 0 // rétro-compat saves sans cœur
     /* Cadence L1 pilotée par le worklet-horloge (clock-processor) : la pluie ne
        gèle plus quand l'onglet perd le focus. Paramètres météo poussés par l'UI
        (setRainParams) et lus à chaque tick. clockDriven=false → fallback rAF. */
@@ -534,27 +540,42 @@ export class RainSampler {
 
   tickPoisson(dtMs, surfaceDensities, density = 1) {
     if (!this.ready || !this.world || this.ctx?.state === 'suspended') return
-    const rec = this.recorder
 
     /* Seule lecture du monde, via l'interface WorldQuery (jamais terrain.material). */
     const pts = this.world.impactPoints()
-
-    /* Partition par matériau bakée UNE fois par monde (réf. stable de _baked) :
-       compte des points exposés + listes de candidats pour pickImpact. Évite de
-       re-filtrer 2500 points × matériaux à CHAQUE frame (l'ancien code le faisait). */
     if (pts !== this._impactCachePts) this._rebuildImpactCache(pts)
 
+    /* DEUX FLUX DÉCOUPLÉS (couche L1 héros indépendante de L2/L3) :
+       • bulk  → secteurs L2 / nappe L3, placement par défaut figé (2D), débit dropletRate.
+       • héros → voix L1 dédiées, placement par la PDF sphérique RÉGLABLE (cfg.l1Field),
+                 débit l1Field.rate. Resserrer/élargir la PDF ne touche QUE L1. */
+    const lf = this.cfg.l1Field
+    this._poissonStream(dtMs, surfaceDensities, density,
+      this.cfg.dropletRate ?? 120, undefined,
+      this._poissonAcc, this._poissonNext,
+      (sid, point) => this._routeBulk(sid, point))
+    this._poissonStream(dtMs, surfaceDensities, density,
+      lf?.rate ?? 0, lf,
+      this._poissonAccH, this._poissonNextH,
+      (sid, point) => this._triggerHero(sid, point))
+  }
+
+  /* Un flux de Poisson par matériau : débit `rateTotal` (grains/s à density=1)
+     réparti au prorata de la surface exposée, indépendant de la résolution de grille.
+     `field` = répartition spatiale passée à pickImpact (undefined = défaut 2D).
+     `onImpact(sid, point)` route chaque goutte tirée. */
+  _poissonStream(dtMs, surfaceDensities, density, rateTotal, field, accMap, nextMap, onImpact) {
+    if (!(rateTotal > 0) || !(density > 0)) return
     const maxGrains = maxGrainsPerTick(this.cfg.layers.L1.voices)
 
+    /* Passe 1 — poids par matériau (surface exposée × surfFactor). 'terre' absorbe
+       les surfaces coupées (sol redevenu terre). */
+    const eff = []
+    let totalWeight = 0
     for (const m of MATERIALS) {
       const sid = m.id
-      /* surfaceDensities[sid] : multiplicateur 0..1 (0 = surface coupée depuis l'UI). */
       const surfFactor = surfaceDensities[sid] ?? 1
-      if (surfFactor <= 0) { this._poissonNext[sid] = 0; continue }
-
-      /* Surface exposée = nombre de points baked exposés pour ce matériau (cache).
-         Pour 'terre' : inclut aussi les points dont le matériau overlay est désactivé
-         (le sol sous un objet retiré de la scène redevient terre). */
+      if (surfFactor <= 0) { nextMap[sid] = 0; continue }
       let exposed = this._exposedCount[sid] || 0
       let candidates = this._byMat[sid] || EMPTY
       if (sid === 'terre') {
@@ -562,132 +583,97 @@ export class RainSampler {
           if (om.id === 'terre') continue
           if ((surfaceDensities[om.id] ?? 1) <= 0) {
             exposed += this._exposedCount[om.id] || 0
-            // concat ne mute pas le tableau caché : sûr de réaffecter.
             candidates = candidates.concat(this._byMat[om.id] || EMPTY)
           }
         }
       }
-      if (!exposed) continue
+      if (!exposed) { nextMap[sid] = 0; continue }
+      const weight = surfFactor * exposed * (MAT_FACTOR[sid] ?? 1)
+      totalWeight += weight
+      eff.push({ sid, candidates, weight })
+    }
+    if (totalWeight <= 0) return
 
-      const λ = density * surfFactor * exposed * (MAT_FACTOR[sid] ?? 1) * 0.05 // grains/ms
+    /* Passe 2 — Poisson par matériau, λ = part du débit-cible (grains/ms). */
+    const rateMs = (rateTotal * density) / 1000
+    for (const { sid, candidates, weight } of eff) {
+      const λ = rateMs * (weight / totalWeight)
       if (λ <= 0) continue
-
-      this._poissonAcc[sid] = (this._poissonAcc[sid] || 0) + dtMs
-
-      /* Tire autant d'impacts que l'intervalle de Poisson le permet, dans la limite
-         du plafond audible (voir MAX_GRAINS_PER_TICK). */
+      accMap[sid] = (accMap[sid] || 0) + dtMs
       let grains = 0
-      while (this._poissonAcc[sid] >= this._poissonNext[sid]) {
-        if (grains >= maxGrains) { this._poissonAcc[sid] = 0; break }
+      while (accMap[sid] >= nextMap[sid]) {
+        if (grains >= maxGrains) { accMap[sid] = 0; break }
         grains++
-        this._poissonAcc[sid] -= this._poissonNext[sid]
-        /* Prochain intervalle : distribution exponentielle (−ln(u)/λ) */
+        accMap[sid] -= nextMap[sid]
         const u = Math.max(1e-9, this.prng.aléa())
-        this._poissonNext[sid] = -Math.log(u) / λ
-
-        const point = pickImpact(candidates, sid, this.prng, this._headWorld, surfaceDensities, true)
-        if (!point) continue
-
-        const impactId = rec?.recording ? rec.nextImpactId() : 0
-        if (impactId) {
-          rec.emit('impact', {
-            impact: impactId, surface: sid,
-            x: Math.round(point.position.x),
-            z: Math.round(point.position.z),
-          })
-        }
-
-        /* Sélection sample seedée (round-robin + décalage PRNG) */
-        const bank = this.banks[sid]
-        if (!bank?.length) continue
-        this._rr[sid] = (this._rr[sid] + 1 + Math.floor(this.prng.aléa() * bank.length)) % bank.length
-        const idx = this._rr[sid]
-        const buf = bank[idx]
-
-        /* Detune depuis le PRNG (plus de Math.random) */
-        const detune = (this.prng.aléa() - 0.5) * 40
-
-        this.trigger(sid, {
-          x: point.position.x,
-          y: point.position.y,
-          z: point.position.z,
-          gainDb: 0,
-          detune,
-          impactId,
-          _buf: buf,
-          _idx: idx,
-        })
+        nextMap[sid] = -Math.log(u) / λ
+        const point = pickImpact(candidates, sid, this.prng, this._headWorld, surfaceDensities, true, field)
+        if (point) onImpact(sid, point)
       }
     }
   }
 
-  trigger(surface, { x = 0, y = null, z = 0, gainDb = 0, detune = 0, impactId = 0, _buf, _idx } = {}) {
-    const rec = this.recorder
-    if (!this.ready || this.ctx.state === 'suspended') {
-      rec?.emit('reject', { impact: impactId, surface, reason: this.ready ? 'suspended' : 'not-ready' })
-      return
-    }
+  /* Flux bulk : la goutte alimente la couche ambiante (secteurs L2 / nappe L3). */
+  _routeBulk(surface, point) {
+    this.trigger(surface, { x: point.position.x, y: point.position.y, z: point.position.z, stream: 'bulk' })
+  }
+
+  /* Flux héros : sélection d'échantillon seedée + detune, puis voix L1 dédiée. */
+  _triggerHero(surface, point) {
     const bank = this.banks[surface]
-    if (!bank?.length) { rec?.emit('reject', { impact: impactId, surface, reason: 'no-bank' }); return }
+    if (!bank?.length) return
+    this._rr[surface] = (this._rr[surface] + 1 + Math.floor(this.prng.aléa() * bank.length)) % bank.length
+    const idx = this._rr[surface]
+    const detune = (this.prng.aléa() - 0.5) * 40
+    this.trigger(surface, {
+      x: point.position.x, y: point.position.y, z: point.position.z,
+      gainDb: 0, detune, _buf: bank[idx], _idx: idx, stream: 'hero',
+    })
+  }
+
+  /* Joue une goutte. `stream` décide de la couche (DÉCOUPLAGE) :
+       'bulk' → L2 secteurs (dist < r2) sinon L3 nappe (ambiante) ; jamais de voix L1.
+       'hero' → voix L1 dédiée, SANS routage par distance ni suivi LOD (reste L1). */
+  trigger(surface, { x = 0, y = null, z = 0, gainDb = 0, detune = 0, impactId = 0, _buf, _idx, stream = 'hero' } = {}) {
+    const rec = this.recorder
+    if (!this.ready || this.ctx.state === 'suspended') return
     const material = materialById(surface)
-    if (!material) { rec?.emit('reject', { impact: impactId, surface, reason: 'no-material' }); return }
+    if (!material) return
 
     const key = this._cellKey(x, z)
     const now = performance.now()
-    if (now - (this._cellCooldown.get(key) || 0) < COOLDOWN_MS) {
-      rec?.emit('reject', { impact: impactId, surface, reason: 'cooldown', cell: key })
-      return
-    }
+    if (now - (this._cellCooldown.get(key) || 0) < COOLDOWN_MS) return
     this._cellCooldown.set(key, now)
 
-    /* Position réelle depuis le relief (y fourni par tickPoisson via pickImpact) */
     const head = this._headWorld
     const posY = (y !== null) ? y : this.coords.ground
     const pos = { x, y: posY, z }
 
-    this.reservoirs.get(surface).add(now)
-    this.triggerCounts.set(surface, this.triggerCounts.get(surface) + 1)
+    this.reservoirs.get(surface)?.add(now)
+    this.triggerCounts.set(surface, (this.triggerCounts.get(surface) || 0) + 1)
 
-    /* T-2.4 — Routage par distance : Couche 1 < r1−overlap, Couche 2 r1..r2 */
     const dist = Math.hypot(pos.x - head.x, pos.y - head.y, pos.z - head.z)
-    const { r1, r2, overlap } = this.bands
 
-    if (this.sectors?.actif && dist >= r1 - overlap) {
-      /* Impact lointain → alimente le débit du secteur (pas de voix héros) */
-      if (dist < r2) {
-        this.sectors.absorberImpact(pos, surface, head)
-      }
-      /* Au-delà de r2 : la nappe (Couche 3) porte la masse — rien à router */
+    if (stream === 'bulk') {
+      /* Couche ambiante : alimente le secteur L2 ; au-delà de r2 la nappe L3 (météo) porte le fond. */
+      if (this.sectors?.actif && dist < this.bands.r2) this.sectors.absorberImpact(pos, surface, head)
       return
     }
 
-    /* Sample : soit pré-sélectionné par tickPoisson, soit fallback seedé */
+    /* stream === 'hero' : voix L1 dédiée. */
+    const bank = this.banks[surface]
+    if (!bank?.length) return
     let buf = _buf, idx = _idx
     if (!buf) {
       this._rr[surface] = (this._rr[surface] + 1 + Math.floor(this.prng.aléa() * bank.length)) % bank.length
       idx = this._rr[surface]
       buf = bank[idx]
     }
-
     const grainId = rec ? rec.nextGrainId() : 0
-    rec?.emit('trigger', {
-      impact: impactId, grain: grainId, surface,
-      x: Math.round(x), y: Math.round(posY), z: Math.round(z),
-      gainDb, detune: +detune.toFixed(1),
-      sample: idx, dur: +buf.duration.toFixed(3),
-      minDist: material.minDistance, maxDist: material.maxDistance,
-    })
-
     const w = this.cfg.layers.L1.priorité
     const seuilWeakDb = this.cfg.layers.L1.seuilWeakDb
     this.pool.play(buf, gainDb, detune, pos, material, now, { rec, grainId, impactId }, head, w, seuilWeakDb, this.bands.r2)
-
-    /* T-3.3 — Enregistre la voix auprès du LodController pour suivi de distance */
-    if (this._lod) {
-      /* Retrouve la voix qui vient d'être acquise (celle portant grainId) */
-      const voice = this.pool.voices.find(v => v.grainId === grainId && v.busy)
-      if (voice) this._lod.track(voice)
-    }
+    /* Pas de _lod.track : la goutte héros reste L1 quelle que soit sa distance (découplage). */
   }
 
   /* T-3.4 — Évaluation LOD appelée à ~30 Hz depuis DioramaApp. */

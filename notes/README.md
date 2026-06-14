@@ -7,7 +7,9 @@ Quatre documents vivants, à lire dans cet ordre :
    (Miniplex), moteur hors React, three.js impératif, audio Web Audio, interfaces-frontières.
 3. **[plan.md](plan.md)** — *comment on y va*. Les chantiers et leur ordre (le Grand Refactor
    d'abord). Pas une suite de jalons validés.
-4. **[terrain-sdf.md](terrain-sdf.md)** — deep-dive technique du terrain sculptable (World Shaper).
+4. **[grand-refactor.md](grand-refactor.md)** — deep-dive du chantier Grand Refactor : stratégie
+   de migration (jalons J0→J6, filet de tests, validation humaine). **J0/J1/J2/J3 complétés.**
+5. **[terrain-sdf.md](terrain-sdf.md)** — deep-dive technique du terrain sculptable (World Shaper).
 
 ## archive/
 

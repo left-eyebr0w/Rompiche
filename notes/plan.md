@@ -1,6 +1,6 @@
 # Rompiche — Le plan : comment on réalise la vision
 
-**Dernière mise à jour** : 14 juin 2026
+**Dernière mise à jour** : 14 juin 2026 (J3 complété)
 **Rôle** : dit *dans quel ordre* et *selon quels principes* on construit la v1.
 Le *quoi* est dans [vision.md](vision.md) ; le *comment c'est bâti* dans
 [architecture.md](architecture.md).
@@ -36,6 +36,10 @@ n'enfreint plus la règle.
 2. **Les tests garde-fous sont le contrat.** Ils peuvent être rouges *pendant* le refactor ;
    ils redeviennent verts pour déclarer le refactor terminé. C'est la preuve que le
    comportement sonore validé en v0 a été restitué.
+   > 📍 **Affiné par [grand-refactor.md](grand-refactor.md)** : le refactor n'est plus « un seul
+   > saut sans étapes validées » mais une **série de jalons (J0→J6) validés à l'oreille + tests
+   > qui grandissent**. Les 5 garde-fous d'origine ont le droit de mourir (ils sont ré-ancrés sur
+   > les nouvelles coutures), la v0 sert d'oracle A/B. Voir le deep-dive pour le détail.
 
 ### 2.3 On construit derrière des coutures stables
 `WorldQuery` (monde ↔ audio) et `SpatialAudioBackend` (audio ↔ spatialisation) isolent les
@@ -46,15 +50,15 @@ Détail dans [architecture.md](architecture.md).
 
 ## 3. Les chantiers
 
-### 🔧 Le Grand Refactor — *passe avant tout*
+### 🔧 Le Grand Refactor — *passe avant tout* 🏗️ J0/J1/J2/J3 ✅
 La refonte holistique qui amène le code à l'architecture cible : TypeScript complet, moteur
 sorti de React, boucle de jeu à pas fixe, ECS (Miniplex), rendu three.js impératif (abandon
 de React Three Fiber), et bascule audio de Resonance (abandonné) vers Web Audio natif.
-**Un seul saut**, pas une série d'étapes validées. Spécifié en détail dans
-[architecture.md](architecture.md).
+Organisé en jalons J0→J6, validés à l'oreille + tests qui grandissent (détail : [grand-refactor.md](grand-refactor.md)).
 - **Dépend de** : rien (point de départ).
-- **Fini quand** : les tests garde-fous sont re-verts, `tsc` est vert, et l'architecture
-  cible est en place.
+- **État** : ✅ J0 (coutures), J1 (boucle headless), J2 (simulation pure), J3 (audio Resonance) complétés, `tsc` vert, 19 tests passent (16 unitaires + 3 E2E J3).
+- **Prochain** : J4 (rendu three.js impératif).
+- **Fini quand** : J6 complet — tests garde-fous re-verts, `tsc` vert, architecture cible en place, v0 retirée.
 
 ### 🎨 L'édition du terrain
 Peindre des matériaux, lever du relief, sur le terrain plat actuel — « j'édite, le son suit »
