@@ -2,14 +2,12 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 window.React = React
 
-/* Charger le bundle DS (IIFE → window.DioramaSonoreDesignSystem_6d9bc4). */
-import '../ds/_ds_bundle.js'
 
 import { createWorld } from './engine/ecs/world.js'
 import { createLoop } from './engine/loop/loop.js'
 import { createHeadlessContext } from './engine/context/createContext.js'
 import { createEngineSystems, setupSimWorld } from './engine/systems/index.js'
-import { ResonanceBackend } from './audio/ResonanceBackend.js'
+import { WebAudioBackend } from './audio/WebAudioBackend.js'
 import { loadBanks } from './audio/banks.js'
 import { RafClock } from './platform/RafClock.js'
 import { ThreeRenderer } from './render/ThreeRenderer.js'
@@ -98,7 +96,7 @@ root.appendChild(boot)
 async function startEngine(): Promise<void> {
   try {
     const audioCtx = new AudioContext()
-    const backend = new ResonanceBackend()
+    const backend = new WebAudioBackend()
     backend.init(audioCtx)
     ctx.audio = backend
 

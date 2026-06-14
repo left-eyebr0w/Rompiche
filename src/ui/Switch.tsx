@@ -1,4 +1,4 @@
-import React from "react";
+import React from 'react'
 
 /* Switch: monochrome on/off toggle. Off = outlined track, On = solid ink. */
 const CSS = `
@@ -34,15 +34,26 @@ const CSS = `
 .ds-switch__state{ font-family:var(--font-mono); font-size:var(--text-2xs);
   letter-spacing:var(--tracking-tag); text-transform:uppercase; color:var(--text-muted); }
 .ds-switch--inverse .ds-switch__state{ color:var(--on-ink-faint); }
-`;
-let injected = false;
+`
+let injected = false
 function ensureStyles() {
-  if (injected || typeof document === "undefined") return;
-  injected = true;
-  const el = document.createElement("style");
-  el.setAttribute("data-ds", "Switch");
-  el.textContent = CSS;
-  document.head.appendChild(el);
+  if (injected || typeof document === 'undefined') return
+  injected = true
+  const el = document.createElement('style')
+  el.setAttribute('data-ds', 'Switch')
+  el.textContent = CSS
+  document.head.appendChild(el)
+}
+
+export interface SwitchProps
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'label'> {
+  checked?: boolean
+  defaultChecked?: boolean
+  onChange?: React.ChangeEventHandler<HTMLInputElement>
+  label?: React.ReactNode
+  showState?: boolean
+  inverse?: boolean
+  disabled?: boolean
 }
 
 export function Switch({
@@ -53,20 +64,20 @@ export function Switch({
   showState = false,
   inverse = false,
   disabled = false,
-  className = "",
+  className = '',
   ...rest
-}) {
-  ensureStyles();
+}: SwitchProps) {
+  ensureStyles()
   const cls = [
-    "ds-switch",
-    inverse ? "ds-switch--inverse" : "",
-    disabled ? "ds-switch--disabled" : "",
+    'ds-switch',
+    inverse ? 'ds-switch--inverse' : '',
+    disabled ? 'ds-switch--disabled' : '',
     className,
   ]
     .filter(Boolean)
-    .join(" ");
+    .join(' ')
   // derive ON/OFF for the state label when controlled or uncontrolled
-  const stateOn = checked != null ? checked : defaultChecked;
+  const stateOn = checked != null ? checked : defaultChecked
   return (
     <label className={cls}>
       <input
@@ -81,7 +92,7 @@ export function Switch({
         <span className="ds-switch__thumb" />
       </span>
       {label != null && <span className="ds-switch__label">{label}</span>}
-      {showState && <span className="ds-switch__state">{stateOn ? "on" : "off"}</span>}
+      {showState && <span className="ds-switch__state">{stateOn ? 'on' : 'off'}</span>}
     </label>
-  );
+  )
 }

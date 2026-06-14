@@ -20,20 +20,20 @@ export interface Material {
   debugColor: number
 }
 
-/* Grand Refactor J0 : ce module a été reclassé dans src/, mais les banques de
-   samples restent (pour l'instant) dans ds/ui_kits/diorama/samples/ — leur
-   relocalisation appartient au chantier audio, hors périmètre J0. Les globs Vite
-   sont résolus relativement à CE fichier ; on les re-tend donc explicitement vers
-   l'emplacement v0. Tether temporaire, à couper quand les assets audio migreront. */
+/* Banques de samples de la famille « impacts » (impacts de pluie par matériau de
+   surface), rangées dans src/assets/audio/impacts/<id>/. Les globs Vite sont
+   résolus relativement à CE fichier. Déposer un .wav dans le bon dossier suffit à
+   l'inclure — aucun manifeste à tenir à jour. Voir src/assets/audio/README.md pour
+   la convention d'arborescence (organisation par famille sonore). */
 const sampleUrls: Record<MaterialId, string[]> = {
   metal: Object.values(
-    import.meta.glob('../../../ds/ui_kits/diorama/samples/metal/*.wav', { query: '?url', import: 'default', eager: true }),
+    import.meta.glob('../../assets/audio/impacts/metal/*.wav', { query: '?url', import: 'default', eager: true }),
   ),
   bache: Object.values(
-    import.meta.glob('../../../ds/ui_kits/diorama/samples/bache/*.wav', { query: '?url', import: 'default', eager: true }),
+    import.meta.glob('../../assets/audio/impacts/bache/*.wav', { query: '?url', import: 'default', eager: true }),
   ),
   terre: Object.values(
-    import.meta.glob('../../../ds/ui_kits/diorama/samples/terre/*.wav', { query: '?url', import: 'default', eager: true }),
+    import.meta.glob('../../assets/audio/impacts/terre/*.wav', { query: '?url', import: 'default', eager: true }),
   ),
 }
 

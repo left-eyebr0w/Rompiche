@@ -1,4 +1,4 @@
-import React from "react";
+import React from 'react'
 
 /* Self-contained styles, injected once. Monochrome — emphasis by value + weight. */
 const CSS = `
@@ -38,44 +38,67 @@ const CSS = `
 .ds-btn[disabled]{ cursor:not-allowed; opacity:.4; }
 .ds-btn--mono{ font-family:var(--font-mono); font-weight:var(--weight-medium);
   letter-spacing:var(--tracking-tag); text-transform:uppercase; font-size:var(--text-xs); }
-`;
-let injected = false;
+`
+let injected = false
 function ensureStyles() {
-  if (injected || typeof document === "undefined") return;
-  injected = true;
-  const el = document.createElement("style");
-  el.setAttribute("data-ds", "Button");
-  el.textContent = CSS;
-  document.head.appendChild(el);
+  if (injected || typeof document === 'undefined') return
+  injected = true
+  const el = document.createElement('style')
+  el.setAttribute('data-ds', 'Button')
+  el.textContent = CSS
+  document.head.appendChild(el)
+}
+
+export type ButtonVariant =
+  | 'primary'
+  | 'secondary'
+  | 'ghost'
+  | 'inverse'
+  | 'inverse-ghost'
+export type ButtonSize = 'sm' | 'md' | 'lg'
+
+export interface ButtonProps
+  extends React.HTMLAttributes<HTMLElement> {
+  variant?: ButtonVariant
+  size?: ButtonSize
+  mono?: boolean
+  iconLeft?: React.ReactNode
+  iconRight?: React.ReactNode
+  as?: React.ElementType
+  disabled?: boolean
+  inverse?: boolean
 }
 
 export function Button({
   children,
-  variant = "primary",
-  size = "md",
+  variant = 'primary',
+  size = 'md',
   mono = false,
+  inverse = false,
   iconLeft = null,
   iconRight = null,
-  as = "button",
-  className = "",
+  as = 'button',
+  className = '',
   ...rest
-}) {
-  ensureStyles();
-  const Tag = as;
+}: ButtonProps) {
+  ensureStyles()
+  const Tag = as
+  // On a dark viewport, `inverse` selects the inverse variant unless an explicit one is set.
+  const resolvedVariant = inverse && variant === 'primary' ? 'inverse' : variant
   const cls = [
-    "ds-btn",
-    `ds-btn--${variant}`,
+    'ds-btn',
+    `ds-btn--${resolvedVariant}`,
     `ds-btn--${size}`,
-    mono ? "ds-btn--mono" : "",
+    mono ? 'ds-btn--mono' : '',
     className,
   ]
     .filter(Boolean)
-    .join(" ");
+    .join(' ')
   return (
     <Tag className={cls} {...rest}>
       {iconLeft}
       {children != null && <span>{children}</span>}
       {iconRight}
     </Tag>
-  );
+  )
 }

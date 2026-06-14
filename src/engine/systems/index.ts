@@ -5,6 +5,7 @@
    `trigger` route les impacts lointains et RETOURNE avant `pool.play`. (Diffère de
    l'ordre purement illustratif de §3.4.) */
 
+import { headInputToWorld } from '../context/coords.js'
 import { createInputSystem, type InputSystemDeps } from './input.js'
 import { createRainPoissonSystem } from './rainPoisson.js'
 import { createLodRoutingSystem } from './lodRouting.js'
@@ -48,8 +49,16 @@ export function createEngineSystems(
   return systems
 }
 
-/** Peuple le World : un émetteur de pluie global + le pool de voix (taille = cfg L1). */
+/** Peuple le World : tête auditeur + émetteur de pluie global + pool de voix (taille = cfg L1). */
 export function setupSimWorld(world: GameWorld, ctx: EngineContext, density = 0.5): void {
+  // Entité tête : seule source de vérité pour la position de l'auditeur en monde.
+  // InputSystem la met à jour chaque tick depuis controls.listener.
+  const headPos = headInputToWorld(ctx.input.controls.listener, ctx.coords)
+  world.add({
+    transform: { position: headPos, forward: { x: 0, y: 0, z: -1 } },
+    listener: { offset: { ...ctx.input.controls.listener }, earHeight: ctx.coords.EAR },
+  })
+
   world.add({ rainEmitter: { density, active: true } })
   const n = ctx.worldConfig.layers.L1.voices
   for (let i = 0; i < n; i++) {

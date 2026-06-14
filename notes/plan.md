@@ -1,6 +1,6 @@
 # Rompiche — Le plan : comment on réalise la vision
 
-**Dernière mise à jour** : 14 juin 2026 (J3 complété)
+**Dernière mise à jour** : 14 juin 2026 (J5 complété)
 **Rôle** : dit *dans quel ordre* et *selon quels principes* on construit la v1.
 Le *quoi* est dans [vision.md](vision.md) ; le *comment c'est bâti* dans
 [architecture.md](architecture.md).
@@ -50,14 +50,14 @@ Détail dans [architecture.md](architecture.md).
 
 ## 3. Les chantiers
 
-### 🔧 Le Grand Refactor — *passe avant tout* 🏗️ J0/J1/J2/J3/J4 ✅
+### 🔧 Le Grand Refactor — *passe avant tout* 🏗️ J0/J1/J2/J3/J4/J5 ✅
 La refonte holistique qui amène le code à l'architecture cible : TypeScript complet, moteur
 sorti de React, boucle de jeu à pas fixe, ECS (Miniplex), rendu three.js impératif (abandon
 de React Three Fiber), et bascule audio de Resonance (abandonné) vers Web Audio natif.
 Organisé en jalons J0→J6, validés à l'oreille + tests qui grandissent (détail : [grand-refactor.md](grand-refactor.md)).
 - **Dépend de** : rien (point de départ).
-- **État** : ✅ J0 (coutures), J1 (boucle headless), J2 (simulation pure), J3 (audio Resonance), J4 (rendu three.js) complétés. `tsc` vert, 21 tests unitaires + 3 E2E J3 passent.
-- **Prochain** : J5 (UI React) → J6 (swap Web Audio).
+- **État** : ✅ J0 (coutures), J1 (boucle headless), J2 (simulation pure), J3 (audio Resonance), J4 (rendu three.js), J5 (UI React + bascule v0→src) complétés. `tsc` vert, tests unitaires + E2E J3/J5 ré-ancrés.
+- **Prochain** : J6 (swap Web Audio) — **dernier jalon**, clôt le refactor.
 - **Fini quand** : J6 complet — tests garde-fous re-verts, `tsc` vert, architecture cible en place, v0 retirée.
 
 ### 🎨 L'édition du terrain

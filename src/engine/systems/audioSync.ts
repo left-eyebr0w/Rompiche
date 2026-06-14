@@ -1,4 +1,4 @@
-import { headInputToWorld } from '../context/coords.js'
+import type { Vector3 } from '../context/coords.js'
 import type { System } from '../loop/loop.js'
 import type { EngineContext } from '../context/EngineContext.js'
 import type { GameWorld } from '../ecs/world.js'
@@ -17,6 +17,7 @@ export function createAudioSyncSystem(
   audioCtx: AudioContext,
 ): System {
   const pool = world.with('voice')
+  const headEntities = world.with('listener', 'transform')
   const sources = new Map<number, SpatialSource>()
   const grains = new Map<number, ActiveGrain>()
   /* Un AnalyserNode par voix : mesure le RMS RÉEL du grain (post grain-gain,
@@ -77,6 +78,8 @@ export function createAudioSyncSystem(
       const buf = banks[voice.materialId!]?.[voice.sample]
       if (!buf) continue
 
+      src.setMaterial(voice.materialId)
+
       /* Couper le grain précédent s'il existe encore. */
       const prev = grains.get(o.voice)
       if (prev) {
@@ -115,8 +118,9 @@ export function createAudioSyncSystem(
       v.levelDb = an ? rmsDb(an) : -Infinity
     }
 
-    /* 5) Positionner l'auditeur (depuis les contrôles). */
-    const worldPos = headInputToWorld(ctx.input.controls.listener, ctx.coords)
-    backend.setListener(worldPos, { x: 0, y: 0, z: -1 }, { x: 0, y: 1, z: 0 })
+    /* 5) Positionner l'auditeur (depuis l'entité tête ECS, mise à jour par InputSystem). */
+    let headPos: Vector3 = { x: 0, y: 0, z: 0 }
+    for (const e of headEntities) { headPos = e.transform!.position; break }
+    backend.setListener(headPos, { x: 0, y: 0, z: -1 }, { x: 0, y: 1, z: 0 })
   }
 }

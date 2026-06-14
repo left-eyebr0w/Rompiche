@@ -1,5 +1,5 @@
 import { HEAD_FACES } from '../context/coords.js'
-import { listenerWorld } from './head.js'
+import type { Vector3 } from '../context/coords.js'
 import type { System } from '../loop/loop.js'
 import type { EngineContext } from '../context/EngineContext.js'
 import type { GameWorld } from '../ecs/world.js'
@@ -15,9 +15,11 @@ function norm3(v: [number, number, number]): [number, number, number] {
 
 export function createFaceProjectionSystem(world: GameWorld): System {
   const voices = world.with('voice')
+  const headEntities = world.with('listener', 'transform')
 
   return (ctx: EngineContext) => {
-    const head = listenerWorld(ctx)
+    let head: Vector3 = { x: 0, y: 0, z: 0 }
+    for (const e of headEntities) { head = e.transform!.position; break }
     const hp: [number, number, number] = [head.x, head.y, head.z]
     const sums = [0, 0, 0, 0, 0, 0]
 

@@ -1,6 +1,7 @@
 import { ResonanceAudio } from 'resonance-audio'
 import type { SpatialAudioBackend, SpatialSource } from './SpatialAudioBackend.js'
 import type { Vector3 } from '../engine/context/coords.js'
+import type { MaterialId } from '../engine/components/materials.js'
 import { LISTENER_FORWARD } from '../engine/context/coords.js'
 
 export class ResonanceBackend implements SpatialAudioBackend {
@@ -35,6 +36,7 @@ export class ResonanceBackend implements SpatialAudioBackend {
     return {
       get input(): AudioNode { return src.input },
       setPosition(p: Vector3): void { src.setPosition(p.x, p.y, p.z) },
+      setMaterial(_id: MaterialId | null): void {},
       dispose(): void { src.input.disconnect() },
     }
   }

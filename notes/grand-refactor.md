@@ -5,7 +5,7 @@
 > perdre le seul code qui sonne juste*. C'est le découpage fin annoncé par [plan.md §5](plan.md).
 
 **Dernière mise à jour** : 14 juin 2026
-**Statut** : ✅ J0/J1/J2/J3/J4 COMPLÉTÉS — J5 à démarrer (UI React).
+**Statut** : ✅ J0/J1/J2/J3/J4/J5 COMPLÉTÉS — J6 à démarrer (swap Web Audio).
 
 ---
 
@@ -125,23 +125,83 @@ v0 (`ds/ui_kits/diorama`) qui tourne encore — bascule réelle au J5.
 - **Pulse tête** : inclus — scale sinusoïdal `1 + 0.03 * sin(time * 3)` quand `listening` est vrai.
 
 ### J5 — UI React = observateur/émetteur ; **bascule** v0 → src
-**⏳ APRÈS J4**
-- **Livrable** : pont snapshot (`useSyncExternalStore`) + file `Command` / `ControlState` drainée
-  par `InputSystem`. **Mort du god-component `DioramaApp`.** Retrait de v0 (ds/ui_kits/diorama) comme
-  app par défaut. Types `EngineSnapshot` + `commands` déjà définis.
-- **Auto** (neuf, E2E ré-ancré sur nouvelle UI) : `save → reload → load`, `listener bouge`,
-  `surfaces`.
-- **Humain** : sliders, save/load, déplacement tête — tout répond.
+**✅ COMPLÉTÉ**
+- **Livrable** : ✅ pont snapshot (`useSyncExternalStore`) + file `Command` / `ControlState` drainée
+  par `InputSystem`. **Mort du god-component `DioramaApp`** — l'app par défaut est désormais React
+  sur `src/` ([main.ts](../src/main.ts) monte [App.tsx](../src/ui/App.tsx)). v0 (ds/ui_kits/diorama)
+  n'est plus l'app par défaut mais **reste exécutable comme oracle A/B** (suppression au J6).
+  Types `EngineSnapshot` + `commands` déjà définis (J0).
+- **Auto** (neuf, E2E ré-ancré sur nouvelle UI) : ✅ 3 E2E (`j5-save-reload`, `j5-listener-position`,
+  `j5-surface-toggles`) re-expriment les garde-fous sur les coutures J5 + `tsc` vert.
+- **Humain** : ✅ sliders, save/load, déplacement tête, orbite/zoom, panneau debug (Ctrl+Alt+D) — tout répond.
+
+#### Découpage J5
+
+| # | Fichier | Action | Détail |
+|---|---------|--------|--------|
+| 1 | `src/ui/store.ts` | **Créer** | `EngineStore` : `getSnapshot`/`subscribe` (polling RAF, 1 maj /6 frames ≈ 10 Hz) projette `EngineSnapshot` (pool, materials, faceLevels, master) ; `pushCommand` → `ctx.input.commands` ; getter `controls` → `ctx.input.controls` (écriture directe muable). |
+| 2 | `src/ui/App.tsx` | **Créer** | Remplace `DioramaApp`. Monte le canvas `ThreeRenderer` dans le viewport, branche le store (`useSyncExternalStore`), handlers spin (drag) / zoom (Ctrl+molette) / debug (Ctrl+Alt+D), méter master, save/load via `persistence/save`. |
+| 3 | `src/ui/ControlHUD.tsx` | **Créer** | Panneau contrôles (DS bundle `Switch`/`Slider`/`Button`) : pluie/vent, surfaces métal/bâche, tête XYZ, densité, sauvegardes. Écrit dans `ctx.input.controls`. |
+| 4 | `src/ui/DebugHUD.tsx` | **Créer** | Panneau debug : 6 faces de la tête (`faceLevels`), master, pool (busy/size/steals), matériaux, sliders live du champ L1 héros (`worldConfig.l1Field`) + courbe SVG. |
+| 5 | `src/engine/systems/input.ts` | **Créer** | `InputSystem` (1ʳᵉ position) : draine `ctx.input.commands` (save/load/reset), applique `ControlState` (surfaces, densité/pluie via `rainEmitter`), resume/suspend l'`AudioContext` au flanc de `listening`. |
+| 6 | `src/engine/systems/faceProjection.ts` | **Créer** | Projette le niveau réel des voix sur les 6 faces de la tête → `ctx.faceLevels` **côté moteur** (l'UI ne calcule rien ; `EngineSnapshot` ne porte que `faceLevels[6]`). |
+| 7 | `src/engine/systems/index.ts` | **Modifier** | `InputSystem` en tête de `createSimSystems` ; `faceProjection` en dernière position de `createEngineSystems` ; `inputDeps` propagés. |
+| 8 | `src/main.ts` | **Modifier** | Monte React `App`, expose `window.__rompiche` (ctx/world/rms/field), **boot auto sans clic** (barre de chargement, sim+rendu démarrent suspended), déverrouillage audio au 1er geste (politique autoplay). |
+| 9 | `src/index.html` | **Modifier** | `<title>Rompiche — J5</title>`, conteneur `#ui` superposé au canvas, `#overlay` (point d'accroche test). |
+| 10 | `tests/helpers-j5.js` + 3 `.spec.js` | **Créer** | `gotoJ5` (clic `#overlay` → attend RMS), `setSlider`/`setSwitch` pilotent les composants DS contrôlés. 3 garde-fous ré-ancrés. |
+
+#### Décisions de design J5
+- **Snapshot par polling RAF (≈10 Hz), pas push tick-driven** : découple la cadence UI de la boucle
+  à pas fixe ; `useSyncExternalStore` ne re-rend que si la frontière a changé.
+- **`ControlState` muable pollé, pas de re-dispatch React** : l'UI écrit directement dans
+  `ctx.input.controls` (le moteur reste l'autorité et clampe). Seul le canal `Command` (discret) passe
+  par la file drainée.
+- **`faceLevels` projetés côté moteur** (`faceProjection`) : fidèle à [[snapshot-bridge]] / `EngineSnapshot`
+  YAGNI — le snapshot ne transporte que 6 nombres.
+- **Pas d'entité tête ECS** : la promesse J4 d'une entité `{ transform, listener }` au J5 est **reportée** ;
+  `audioSync`/`faceProjection` lisent toujours `listenerWorld(ctx)` / `headInputToWorld(controls)`. À acter
+  comme dette (reporté ou abandonné) — candidat naturel à trancher au J6 ou après.
+- **DS bundle réutilisé tel quel** (`window.DioramaSonoreDesignSystem_*`, IIFE) : pas de réécriture des
+  composants visuels.
+- **v0 conservée comme oracle A/B** : non supprimée en J5 ; suppression prévue à la validation finale du J6.
 
 ### J6 — Swap audio **temps 2** : `ResonanceBackend` → `WebAudioBackend`
-**⏳ APRÈS J5**
+**⏳ À DÉMARRER — dernier jalon (clôt le refactor)**
 - **Livrable** : `PannerNode` HRTF par voix ; **reconstruction explicite** de la réverb
   (`ConvolverNode` ← `enclosedVolume()`) et de l'occlusion (passe-bas sur le send) — ce que
-  Resonance offrait gratuitement.
+  Resonance offrait gratuitement. Bascule derrière la **même couture** `SpatialAudioBackend` :
+  `audioSync` ne change pas.
 - **Auto** : garde-fous en propriétés invariantes **doivent rester verts** (right>left,
-  peakOff<peakOn·0,6, heard) — conçus pour survivre au changement de HRTF.
+  peakOff<peakOn·0,6, heard) — conçus pour survivre au changement de HRTF. + `tsc` vert.
 - **Humain** : **A/B à l'oreille contre Resonance (J3)** — le son change (HRTF différents), on
   valide qu'il reste *crédible et cohérent*. Une fois validé, `ResonanceBackend` supprimé.
+
+> 🔑 **Constat de cadrage (code lu 14 juin 2026)** : dans le monde plat v1,
+> [`World.ts`](../src/engine/world/World.ts) renvoie `isOccluded → 0` et `enclosedVolume → 0`.
+> **Réverb et occlusion sont donc fonctionnellement nulles dans la scène vitrine.** Le cœur réel de
+> J6 = le swap HRTF par voix ; la réverb/occlusion sont câblées *correctes mais dormantes* (send à
+> 0, filtre transparent) — elles s'activeront aux chantiers terrain / monde vivant, sans mentir d'ici là.
+
+#### Découpage J6
+
+| # | Fichier | Action | Détail |
+|---|---------|--------|--------|
+| 1 | `src/audio/WebAudioBackend.ts` | **Créer** | Implémente `SpatialAudioBackend`. `init` : `masterGain` (gain 3, comme v0) → `destination`. `createSource()` → `PannerNode { panningModel:'HRTF', distanceModel:'inverse' }` (décision actée), `input` = le panner branché sur master ; `setPosition` → `panner.positionX/Y/Z`. `setListener` → `AudioListener.positionX/Y/Z` + `forward*/up*`. `currentTime` → `ctx.currentTime`. Expose `masterGain`. |
+| 2 | `src/audio/SpatialAudioBackend.ts` | **Modifier** | Ajouter `setMaterial(id: MaterialId)` à `SpatialSource` (décision actée : la couture porte le matériau, `audioSync` reste agnostique de la techno). `WebAudioBackend` mappe `refDistance`/`maxDistance`/`rolloffFactor` du `PannerNode` par matériau (reporte `setMaxDistance(material.maxDistance·meter)` + `rolloff:'logarithmic'` de la v0). `ResonanceBackend.setMaterial` = no-op (Resonance gère via son `createSource`). |
+| 3 | `src/engine/systems/audioSync.ts` | **Modifier** | Appeler `src.setMaterial(voice.materialId)` à la création de voix / au changement de matériau. Aucune autre modif (reste branché sur la couture). |
+| 4 | — réverb (dormante) | **dans #1** | `ConvolverNode` partagé sur un send ; IR ← `enclosedVolume()` (Sabine). `enclosedVolume=0` en v1 → **send à 0 (dry total)**. Structure correcte, inactive. |
+| 5 | — occlusion (dormante) | **dans #1** | `BiquadFilter` passe-bas par source sur le send, piloté par `isOccluded()`. `isOccluded=0` en v1 → **filtre transparent**. |
+| 6 | Entité tête ECS | **Créer (dette J4→J5 reprise ici, décision actée)** | Créer l'entité `{ transform, listener }` ; `audioSync` + `faceProjection` lisent la position depuis l'entité au lieu de `listenerWorld(ctx)` / `headInputToWorld(controls)`. `InputSystem` écrit `controls.listener` → entité. Solde la dette laissée par J5. |
+| 7 | `src/main.ts` | **Modifier** | `new ResonanceBackend()` → `new WebAudioBackend()`. `backend.masterGain` reste branché à l'`AnalyserNode` master. **Seul point de bascule.** |
+| 8 | `src/audio/webAudioBackend.test.ts` | **Créer** | Unitaire (OfflineAudioContext) : `createSource().input` connectable ; `setPosition`/`setListener`/`setMaterial` poussent dans les bons `AudioParam`. Smoke du graphe. |
+| 9 | Garde-fous E2E | **Vérifier, pas réécrire** | `j5-listener-position`, `j5-surface-toggles` (`peakOff<peakOn·0,7`), test L/R binaural ([layers-signal](../tests/layers-signal.spec.js)) restent verts **sans modif**. Un test qui comparerait un dB/PCM exact = c'est lui le bug. |
+| 10 | `ResonanceBackend.ts` + dép `resonance-audio` + v0 | **Supprimer** | **Seulement après validation A/B humaine.** Retire `ResonanceBackend`, désinstalle `resonance-audio`, retire `ds/ui_kits/diorama` comme oracle. → architecture cible en place, refactor terminé. |
+
+#### Décisions de design J6 (actées 14 juin 2026)
+- **`distanceModel:'inverse'`** pour approcher le `rolloff:'logarithmic'` de la v0 ; calage fin à l'oreille en A/B.
+- **`SpatialSource.setMaterial(id)`** : la couture porte le matériau ; `audioSync` reste agnostique de la techno de spatialisation.
+- **Entité tête ECS traitée dans J6** : la dette reportée de J4/J5 est soldée ici, pas plus tard.
+- **Réverb/occlusion dormantes** : câblées correctes mais à send=0 / filtre transparent tant que le monde est plat (`enclosedVolume`/`isOccluded` = 0).
 
 ---
 

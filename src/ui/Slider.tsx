@@ -1,4 +1,4 @@
-import React from "react";
+import React from 'react'
 
 /* Slider: monochrome parameter control with optional mono value readout. */
 const CSS = `
@@ -33,15 +33,30 @@ const CSS = `
 .ds-slider--inverse input[type=range]::-webkit-slider-thumb{ background:var(--blanc); border-color:var(--canvas-noir); box-shadow:0 0 0 1px var(--blanc); }
 .ds-slider--inverse input[type=range]::-moz-range-thumb{ background:var(--blanc); border-color:var(--canvas-noir); box-shadow:0 0 0 1px var(--blanc); }
 .ds-slider--disabled{ opacity:.4; pointer-events:none; }
-`;
-let injected = false;
+`
+let injected = false
 function ensureStyles() {
-  if (injected || typeof document === "undefined") return;
-  injected = true;
-  const el = document.createElement("style");
-  el.setAttribute("data-ds", "Slider");
-  el.textContent = CSS;
-  document.head.appendChild(el);
+  if (injected || typeof document === 'undefined') return
+  injected = true
+  const el = document.createElement('style')
+  el.setAttribute('data-ds', 'Slider')
+  el.textContent = CSS
+  document.head.appendChild(el)
+}
+
+export interface SliderProps
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'defaultValue' | 'label'> {
+  label?: React.ReactNode
+  value?: number
+  defaultValue?: number
+  min?: number
+  max?: number
+  step?: number
+  onChange?: React.ChangeEventHandler<HTMLInputElement>
+  formatValue?: (value: number | undefined) => React.ReactNode
+  showValue?: boolean
+  inverse?: boolean
+  disabled?: boolean
 }
 
 export function Slider({
@@ -56,21 +71,21 @@ export function Slider({
   showValue = true,
   inverse = false,
   disabled = false,
-  className = "",
+  className = '',
   ...rest
-}) {
-  ensureStyles();
-  const current = value != null ? value : defaultValue;
+}: SliderProps) {
+  ensureStyles()
+  const current = value != null ? value : defaultValue
   const display =
-    typeof formatValue === "function" ? formatValue(current) : current;
+    typeof formatValue === 'function' ? formatValue(current) : current
   const cls = [
-    "ds-slider",
-    inverse ? "ds-slider--inverse" : "",
-    disabled ? "ds-slider--disabled" : "",
+    'ds-slider',
+    inverse ? 'ds-slider--inverse' : '',
+    disabled ? 'ds-slider--disabled' : '',
     className,
   ]
     .filter(Boolean)
-    .join(" ");
+    .join(' ')
   return (
     <div className={cls}>
       {(label != null || showValue) && (
@@ -91,5 +106,5 @@ export function Slider({
         {...rest}
       />
     </div>
-  );
+  )
 }

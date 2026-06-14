@@ -7,7 +7,6 @@
    Le cooldown est une Resource (ctx.cooldown) indexée en TEMPS LOGIQUE (déterministe,
    §7) — pas performance.now() comme en v0, qui casserait le déterminisme. */
 
-import { listenerWorld } from './head.js'
 import type { System } from '../loop/loop.js'
 import type { EngineContext } from '../context/EngineContext.js'
 
@@ -25,7 +24,7 @@ function cellKey(ctx: EngineContext, x: number, z: number): number {
 
 export function createLodRoutingSystem(): System {
   return (ctx) => {
-    const head = listenerWorld(ctx)
+    const head = ctx.headWorldPos
     const { r1, r2, overlap } = ctx.bands
     const now = ctx.time.seconds
 

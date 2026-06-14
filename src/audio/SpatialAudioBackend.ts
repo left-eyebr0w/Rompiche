@@ -5,6 +5,7 @@
      Impl cible       : WebAudioBackend (PannerNode HRTF, temps 2) */
 
 import type { Vector3 } from '../engine/context/coords.js'
+import type { MaterialId } from '../engine/components/materials.js'
 
 export interface SpatialAudioBackend {
   init(ctx: AudioContext): void
@@ -21,5 +22,7 @@ export interface SpatialSource {
   /** Point de connexion du grain. */
   readonly input: AudioNode
   setPosition(p: Vector3): void
+  /** Configure les paramètres d'atténuation (refDistance/maxDistance) selon le matériau. */
+  setMaterial(id: MaterialId | null): void
   dispose(): void
 }

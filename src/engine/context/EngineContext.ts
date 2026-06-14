@@ -4,7 +4,7 @@
    système. HORS ECS (ce ne sont pas des entités). Agrège les coutures stables.
    Aucun comportement ici : que la signature. */
 
-import type { Coords } from './coords.js'
+import type { Coords, Vector3 } from './coords.js'
 import type { WorldConfig, LayerBoundaries } from './worldConfig.js'
 import type { MaterialId } from '../components/materials.js'
 import type { WorldQuery } from '../world/World.js'
@@ -72,6 +72,9 @@ export interface EngineContext {
   frame: FrameEvents
   /** Niveaux directionnels des 6 faces de la tête (projetés par FaceProjectionSystem). */
   faceLevels: [number, number, number, number, number, number]
+  /** Position monde de la tête, mise à jour par InputSystem chaque tick.
+     Cache de ctx.world de l'entité { listener, transform } pour les systèmes sans world. */
+  headWorldPos: Vector3
   input: InputChannels
   /* Adaptateurs liés au DOM / AudioContext : injectés par la platform au démarrage,
      LÉGITIMEMENT ABSENTS en test headless (le cœur tourne sans audio ni rendu, §2.1). */

@@ -7,7 +7,7 @@
    La variante « platform » (WorkletClock + backends réels, injectés au geste
    utilisateur) viendra aux jalons audio/rendu. */
 
-import { makeCoords } from './coords.js'
+import { makeCoords, headInputToWorld } from './coords.js'
 import { makeWorldConfig, résoudreCouches, type WorldConfig } from './worldConfig.js'
 import { makeDefaultTerrain } from '../world/Terrain.js'
 import { makeDefaultWorld } from '../world/World.js'
@@ -72,6 +72,7 @@ export function createHeadlessContext(opts: HeadlessOptions = {}): EngineContext
     },
     frame: { impacts: [], demotions: [], grainOnsets: [] },
     faceLevels: [-Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity],
+    headWorldPos: headInputToWorld(defaultControls().listener, coords),
     input: emptyInput(),
     // audio / render : absents en headless (optionnels, §2.1)
   }

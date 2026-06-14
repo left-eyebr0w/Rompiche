@@ -9,7 +9,6 @@
    durée de grain nominale en temps logique. */
 
 import { materialById } from '../components/materials.js'
-import { listenerWorld } from './head.js'
 import type { System } from '../loop/loop.js'
 import type { EngineContext } from '../context/EngineContext.js'
 import type { GameWorld } from '../ecs/world.js'
@@ -43,7 +42,7 @@ export function createVoicePoolSystem(world: GameWorld, ctx: EngineContext): Sys
 
   return (c) => {
     const now = c.time.seconds
-    const head = listenerWorld(c)
+    const head = c.headWorldPos
 
     /* 1) Libère les voix dont le grain est terminé (durée logique). */
     for (const e of pool) {

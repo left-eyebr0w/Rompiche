@@ -1,3 +1,4 @@
+import { headInputToWorld } from '../context/coords.js'
 import type { System } from '../loop/loop.js'
 import type { EngineContext } from '../context/EngineContext.js'
 import type { GameWorld } from '../ecs/world.js'
@@ -16,6 +17,7 @@ export function createInputSystem(ctx: EngineContext, deps: InputSystemDeps): Sy
 
   let prevListening = ctx.input.controls.listening
   const emitterEntities = world.with('rainEmitter')
+  const headEntities = world.with('listener', 'transform')
 
   return () => {
     const cmds = ctx.input.commands.splice(0)
@@ -37,6 +39,15 @@ export function createInputSystem(ctx: EngineContext, deps: InputSystemDeps): Sy
     }
 
     const ctrl = ctx.input.controls
+
+    // Mettre à jour la position monde de la tête (entité ECS + cache ctx pour systèmes sans world).
+    const worldPos = headInputToWorld(ctrl.listener, ctx.coords)
+    ctx.headWorldPos = worldPos
+    for (const e of headEntities) {
+      e.transform!.position = worldPos
+      e.listener!.offset = { ...ctrl.listener }
+      break
+    }
 
     ctx.surfaces.metal = ctrl.metal ? 1 : 0
     ctx.surfaces.bache = ctrl.bache ? 1 : 0

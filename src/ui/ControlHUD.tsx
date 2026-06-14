@@ -1,4 +1,9 @@
 import React from 'react'
+import { Button } from './Button.js'
+import { Eyebrow } from './Eyebrow.js'
+import { Slider } from './Slider.js'
+import { Switch } from './Switch.js'
+import { Tag } from './Tag.js'
 import type { EngineContext } from '../engine/context/EngineContext.js'
 import type { EngineStore } from './store.js'
 
@@ -114,8 +119,6 @@ function SavesSection({ Button, Eyebrow, onSave, onLoad, listSaves, deleteSave }
 }
 
 export default function ControlHUD(props: ControlHUDProps) {
-  const DS = (window as any).DioramaSonoreDesignSystem_6d9bc4
-  const { Switch, Slider, Button, Tag, Eyebrow } = DS
   const { ctx, onSave, onLoad, listSaves, deleteSave } = props
 
   const ctrl = ctx.input.controls

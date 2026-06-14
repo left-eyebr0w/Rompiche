@@ -9,7 +9,6 @@
 
 import { MATERIALS, type MaterialId } from '../components/materials.js'
 import { pickImpact, type TerrainVertex, type SpatialField } from '../world/terrainMesh.js'
-import { listenerWorld } from './head.js'
 import type { System } from '../loop/loop.js'
 import type { EngineContext } from '../context/EngineContext.js'
 import type { GameWorld } from '../ecs/world.js'
@@ -31,7 +30,7 @@ export function createRainPoissonSystem(world: GameWorld, ctx: EngineContext): S
     if (density <= 0) return
 
     const dtMs = dt * 1000
-    const head = listenerWorld(c)
+    const head = c.headWorldPos
     const rateMs = (c.worldConfig.dropletRate * density) / 1000
     const field: SpatialField = (() => {
       const { rate: _r, ...rest } = c.worldConfig.l1Field; return rest
