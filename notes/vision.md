@@ -1,9 +1,7 @@
-> ⚠️ **Ce document n'est PAS le périmètre v1.** C'est la **vision « la totale »** (destination
-> à long terme). Le périmètre v1 réellement engagé est le *Pivot* — voir
-> [cadrage-v1.md](cadrage-v1.md). Les features ci-dessous sont réparties sur les paliers
-> **P2 → P4+** : édition, World Shaper (P3, voir [world-shaper.md](world-shaper.md)), puis
-> météo / eau / biomes / faune / objets animables. Chacune se branchera sur le modèle pivot
-> sans réécrire le cœur.
+> ✅ **Ce document EST le périmètre v1.** Il décrit *ce qu'on construit*. La façon dont on le
+> bâtit est dans [architecture.md](architecture.md) ; l'ordre dans lequel on le réalise (le
+> Grand Refactor d'abord, puis les chantiers) est dans [plan.md](plan.md). Le terrain
+> sculptable a une spec dédiée : [terrain-sdf.md](terrain-sdf.md).
 
 ---
 
@@ -72,4 +70,4 @@
 **TECHNIQUE**
 - Format save binaire (petit fichier)
 - Versioning saves
-- 60fps mobile (device min : ?)
+- 60fps mobile

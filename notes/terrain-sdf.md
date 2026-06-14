@@ -1,10 +1,10 @@
-# World Shaper — Spécification Détaillée des Mécanismes
+# Terrain sculptable (World Shaper) — spécification technique
 
-> ⚠️ **Palier futur, pas la v1.** Cette spec décrit le **Palier P3** de la trajectoire
-> (cf. [cadrage-v1.md](cadrage-v1.md)). Le World Shaper sera introduit comme une **2ᵉ
-> implémentation du terrain derrière l'interface `WorldQuery`** figée en v1 — un remplacement
-> d'implémentation, jamais une réécriture du cœur. Ne pas commencer avant que le Pivot (v1)
-> soit livré et que la boucle d'édition (P2) soit validée sur le terrain plat.
+> 🔎 **Deep-dive technique du chantier « World Shaper »** ([plan.md](plan.md)). Le terrain
+> sculptable est introduit comme une **2ᵉ implémentation derrière l'interface `WorldQuery`**
+> ([architecture.md](architecture.md)) — un remplacement d'implémentation, jamais une
+> réécriture du cœur. Il dépend du Grand Refactor, et profite de la boucle d'édition du
+> terrain plat. Cette note fige les décisions géométriques à prendre **avant** d'écrire le code.
 
 
 Puisque vous avez déjà la PWA + l'audio, on se concentre sur **le cœur géométrique et ses contrats**. Je vais structurer ça comme une vraie spec technique, en pensant aux pièges et aux décisions à figer **avant** d'écrire le code.
