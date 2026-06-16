@@ -14,10 +14,6 @@ export interface DioramaState {
   windRotation: number
   windForce: number
 
-  /** Surfaces actives */
-  metal: boolean
-  bache: boolean
-
   /** Auditeur */
   listening: boolean
   /** Position normalisée [−1, +1] sur chaque axe */
@@ -29,6 +25,10 @@ export interface DioramaState {
   density: number
   /** Gain maître en dB [−60, 0] */
   gain: number
+  /** Gain pluie en dB [−10, +10] (sauvegarde) */
+  rainGainDb: number
+  /** Gain master en dB [−10, +10] (sauvegarde) */
+  masterGainDb: number
 
   /** Caméra */
   spin: number

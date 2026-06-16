@@ -148,16 +148,6 @@ export default function ControlHUD(props: ControlHUDProps) {
           </div>
         </section>
 
-<section className="hud__sec">
-          <div className="hud__sech"><Icon name="box" /><Eyebrow tone="inverse">Éléments · surfaces</Eyebrow></div>
-          <div className="hud__stack">
-            <Switch inverse label="Surface métal" showState checked={ctrl.metal}
-              onChange={(e: any) => setCtrl({ metal: e.target.checked })} />
-            <Switch inverse label="Surface bâche" showState checked={ctrl.bache}
-              onChange={(e: any) => setCtrl({ bache: e.target.checked })} />
-          </div>
-        </section>
-
         <section className="hud__sec">
           <div className="hud__sech"><Icon name="move-3d" /><Eyebrow tone="inverse">Tête de l'auditeur</Eyebrow></div>
           <div className="hud__stack">
@@ -194,11 +184,22 @@ export default function ControlHUD(props: ControlHUDProps) {
               value={ctrl.density} disabled={!ctrl.rain}
               formatValue={(v: number) => v.toFixed(2)}
               onChange={(e: any) => setCtrl({ density: parseFloat(e.target.value) })} />
+            <Slider inverse label="Gain pluie" min={-10} max={10} step={0.5}
+              value={ctrl.rainGainDb ?? 0}
+              formatValue={(v: number) => v.toFixed(1) + ' dB'}
+              onChange={(e: any) => setCtrl({ rainGainDb: parseFloat(e.target.value) })} />
           </div>
         </section>
 
         <SavesSection Button={Button} Eyebrow={Eyebrow}
           onSave={onSave} onLoad={onLoad} listSaves={listSaves} deleteSave={deleteSave} />
+      </div>
+      <div className="hud__foot">
+        <Slider inverse label="Gain master" min={-10} max={10} step={0.5}
+          value={ctrl.masterGainDb ?? 0}
+          formatValue={(v: number) => v.toFixed(1) + ' dB'}
+          onChange={(e: any) => setCtrl({ masterGainDb: parseFloat(e.target.value) })} />
+        <div className="hud__note">mesures audio réelles · AnalyserNode par voix</div>
       </div>
     </aside>
   )

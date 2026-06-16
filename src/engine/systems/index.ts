@@ -11,13 +11,11 @@ import { createRainPoissonSystem } from './rainPoisson.js'
 import { createLodRoutingSystem } from './lodRouting.js'
 import { createVoicePoolSystem } from './voicePool.js'
 import { createAudioSyncSystem } from './audioSync.js'
-import { createRenderSyncSystem } from './renderSync.js'
 import { createFaceProjectionSystem } from './faceProjection.js'
 import type { System } from '../loop/loop.js'
 import type { EngineContext } from '../context/EngineContext.js'
 import type { GameWorld } from '../ecs/world.js'
 import type { Banks } from '../../audio/banks.js'
-import type { ThreeRenderer } from '../../render/ThreeRenderer.js'
 
 /** Construit les systèmes de simulation pure (pas d'audio ni rendu), liés au World. */
 export function createSimSystems(world: GameWorld, ctx: EngineContext, inputDeps?: InputSystemDeps): System[] {
@@ -29,24 +27,23 @@ export function createSimSystems(world: GameWorld, ctx: EngineContext, inputDeps
   ]
 }
 
-/** Construit les systèmes de simulation + audio + rendu, liés au World.
+/** Construit les systèmes de simulation + audio, liés au World.
     AudioSyncSystem tourne APRÈS VoicePoolSystem (qui pousse onsets/demotions).
-    RenderSyncSystem tourne en dernier (n'affecte ni la simu ni l'audio). */
+    Le RENDU n'est PLUS un système : il est découplé du pas fixe et piloté par rAF
+    (main.ts), conformément à architecture.md §2 (rAF a le droit de geler hors focus).
+    FaceProjectionSystem reste dans la boucle (pur, suit la mesure audio, alimente le HUD). */
 export function createEngineSystems(
   world: GameWorld,
   ctx: EngineContext,
   banks: Banks,
   audioCtx: AudioContext,
-  renderer?: ThreeRenderer,
   inputDeps?: InputSystemDeps,
 ): System[] {
-  const systems: System[] = [
+  return [
     ...createSimSystems(world, ctx, { world, audioCtx, ...inputDeps }),
     createAudioSyncSystem(world, ctx, banks, audioCtx),
+    createFaceProjectionSystem(world),
   ]
-  if (renderer) systems.push(createRenderSyncSystem(renderer, world))
-  systems.push(createFaceProjectionSystem(world))
-  return systems
 }
 
 /** Peuple le World : tête auditeur + émetteur de pluie global + pool de voix (taille = cfg L1). */

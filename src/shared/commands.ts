@@ -22,9 +22,11 @@ export interface ControlState {
   listener: { x: number; y: number; z: number }
   density: number
   gain: number
+  /** Gain pluie en dB [−10, +10], 0 = neutre. */
+  rainGainDb: number
+  /** Gain master en dB [−10, +10], 0 = neutre (relatif au gain de base). */
+  masterGainDb: number
   wind: { force: number; rot: number; tilt: number }
   rain: boolean
-  metal: boolean
-  bache: boolean
   listening: boolean
 }

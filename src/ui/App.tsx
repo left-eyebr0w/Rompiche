@@ -155,9 +155,10 @@ export default function App({ ctx, world, renderer }: AppProps) {
     const terrain = (ctx.world as any).terrain
     const objects: any[] = []
     const statePatch: DioramaStatePatch = {
-      rain: ctrl.rain, metal: ctrl.metal, bache: ctrl.bache,
+      rain: ctrl.rain,
       x: ctrl.listener.x, y: ctrl.listener.y, z: ctrl.listener.z,
       density: ctrl.density, gain: ctrl.gain,
+      rainGainDb: ctrl.rainGainDb, masterGainDb: ctrl.masterGainDb,
     }
     const save = serializeWorld(name, statePatch, terrain, objects, MATERIALS.map(m => m.id))
     await putSave(name, save)
@@ -172,9 +173,9 @@ export default function App({ ctx, world, renderer }: AppProps) {
     if (statePatch.z !== undefined) ctrl.listener.z = statePatch.z
     if (statePatch.density !== undefined) ctrl.density = statePatch.density
     if (statePatch.rain !== undefined) ctrl.rain = statePatch.rain
-    if (statePatch.metal !== undefined) ctrl.metal = statePatch.metal
-    if (statePatch.bache !== undefined) ctrl.bache = statePatch.bache
     if (statePatch.gain !== undefined) ctrl.gain = statePatch.gain
+    if (statePatch.rainGainDb !== undefined) ctrl.rainGainDb = statePatch.rainGainDb
+    if (statePatch.masterGainDb !== undefined) ctrl.masterGainDb = statePatch.masterGainDb
     store.pushCommand({ t: 'reset' })
     setLoadKey(k => k + 1)
   }, [ctx, ctrl, store])

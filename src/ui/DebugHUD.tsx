@@ -214,6 +214,8 @@ export default function DebugHUD({ store, fieldViz, onToggleFieldViz }: DebugHUD
               onChange={(v) => setParam('floor', v)} fmt={(v) => v.toFixed(2)} />
             <SliderRow k="vertical ky" min={0} max={1} step={0.01} value={field.ky ?? 0}
               onChange={(v) => setParam('ky', v)} fmt={(v) => v.toFixed(2)} />
+            <SliderRow k="bias haut" min={-2} max={8} step={0.1} value={field.upBias ?? 0}
+              onChange={(v) => setParam('upBias', v)} fmt={(v) => v.toFixed(1) + ' m'} />
             <FieldCurveField ctx={ctx} />
             <div className="dbg__rec" style={{ marginTop: 8 }}>
               <button

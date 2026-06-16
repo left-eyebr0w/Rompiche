@@ -57,7 +57,9 @@ export interface WeatherConfig {
    - sigma : rayon de diffusion (m) au-delà du cœur ; petit = serré autour de la tête
    - p     : forme (1 = pointu/exponentiel, 2 = gaussien, >2 = plateau central puis chute)
    - floor : poids résiduel des gouttes lointaines [0..1] (0 = disparaissent)
-   - ky    : poids de l'axe vertical (0 = répartition 2D plate, 1 = vraie sphère 3D) */
+   - ky    : poids de l'axe vertical (0 = répartition 2D plate, 1 = vraie sphère 3D)
+   - upBias: décalage vertical (m) du centre de la PDF vers le haut ; les gouttes
+             sont plus probables au-dessus de la tête qu'en dessous (pluie naturelle) */
 export interface L1FieldConfig {
   rate: number
   core: number
@@ -65,6 +67,7 @@ export interface L1FieldConfig {
   p: number
   floor: number
   ky: number
+  upBias: number
 }
 
 export interface WorldConfig {
@@ -164,7 +167,7 @@ export function makeWorldConfig(
     /* Couche L1 héros découplée : son propre débit + répartition spatiale réglable.
        ky=1 → vraie sphère 3D (le défaut demandé) ; σ=10 m, p=2 (gaussien), petit plancher ;
        core=0 → pas de plateau central par défaut (à régler à l'oreille). */
-    l1Field: { rate: 60, core: 0, sigma: 10, p: 2, floor: 0.02, ky: 1 },
+    l1Field: { rate: 60, core: 0, sigma: 10, p: 2, floor: 0.02, ky: 1, upBias: 2.0 },
     /* Débit du flux BULK (alimente L2 secteurs / L3 nappe), INDÉPENDANT du grid.
        density=0,5 (défaut) = pluie posée. Découplé du débit héros L1 (l1Field.rate). */
     dropletRate: 120,

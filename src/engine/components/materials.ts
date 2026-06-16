@@ -54,6 +54,14 @@ export const MATERIALS: Material[] = [
   { id: 'terre', label: 'Terre', urls: sampleUrls.terre, gain: 1, minDistance: 0.5, maxDistance: 14, debugColor: 0x9ae87a },
 ]
 
+/* Nombre d'échantillons disponibles par matériau (métadonnée d'assets, connue à
+   l'import via le glob eager). Source unique pour le tirage d'échantillon du moteur
+   (rainPoisson) : permet un index UNIFORME dans le banc réel, sans coupler le moteur
+   à Web Audio ni produire d'index hors-borne (grains muets). */
+export const SAMPLE_COUNTS: Record<MaterialId, number> = Object.fromEntries(
+  MATERIALS.map(m => [m.id, m.urls.length]),
+) as Record<MaterialId, number>
+
 /* id → indice dans MATERIALS (pour les Uint8Array du terrain) */
 export const MATERIAL_INDEX: Record<MaterialId, number> = Object.fromEntries(
   MATERIALS.map((m, i) => [m.id, i]),

@@ -49,9 +49,6 @@ export function createInputSystem(ctx: EngineContext, deps: InputSystemDeps): Sy
       break
     }
 
-    ctx.surfaces.metal = ctrl.metal ? 1 : 0
-    ctx.surfaces.bache = ctrl.bache ? 1 : 0
-
     for (const ent of emitterEntities) {
       if (ent.rainEmitter) {
         ent.rainEmitter.density = ctrl.density
@@ -59,6 +56,9 @@ export function createInputSystem(ctx: EngineContext, deps: InputSystemDeps): Sy
       }
       break
     }
+
+    ctx.rainGainDb = ctrl.rainGainDb
+    ctx.masterGainDb = ctrl.masterGainDb
 
     if (audioCtx) {
       const nowListening = ctrl.listening

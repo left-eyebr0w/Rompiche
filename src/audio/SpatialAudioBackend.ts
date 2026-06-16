@@ -1,8 +1,6 @@
 /* ── SpatialAudioBackend — couture audio ↔ spatialisation ─ Grand Refactor J0 ──
-   Types-frontières SEULS (architecture.md §4.2). Abstrait la techno de spatialisation
-   pour permettre le swap Resonance → Web Audio sans toucher aux systèmes audio.
-     Impl transitoire : ResonanceBackend (temps 1 du swap)
-     Impl cible       : WebAudioBackend (PannerNode HRTF, temps 2) */
+   Types-frontières SEULS (architecture.md §4.2). Abstrait la techno de spatialisation.
+   Impl unique et finale : WebAudioBackend (PannerNode HRTF). */
 
 import type { Vector3 } from '../engine/context/coords.js'
 import type { MaterialId } from '../engine/components/materials.js'
@@ -14,6 +12,8 @@ export interface SpatialAudioBackend {
   /** Une source spatialisée par Voice. */
   createSource(): SpatialSource
   setListener(pos: Vector3, forward: Vector3, up: Vector3): void
+  /** Gain maître en dB (relatif au gain de base). Rampe pour éviter le clic. */
+  setMasterGainDb(db: number): void
   // occlusion (monde vivant) : filtre passe-bas sur le send
   // réverb   (monde vivant) : ConvolverNode partagé, IR ← enclosedVolume()
 }

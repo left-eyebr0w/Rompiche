@@ -57,8 +57,8 @@ de React Three Fiber), et bascule audio de Resonance (abandonné) vers Web Audio
 Organisé en jalons J0→J6, validés à l'oreille + tests qui grandissent (détail : [grand-refactor.md](grand-refactor.md)).
 - **Dépend de** : rien (point de départ).
 - **État** : ✅ J0 (coutures), J1 (boucle headless), J2 (simulation pure), J3 (audio Resonance), J4 (rendu three.js), J5 (UI React + bascule v0→src) complétés. `tsc` vert, tests unitaires + E2E J3/J5 ré-ancrés.
-- **Prochain** : J6 (swap Web Audio) — **dernier jalon**, clôt le refactor.
-- **Fini quand** : J6 complet — tests garde-fous re-verts, `tsc` vert, architecture cible en place, v0 retirée.
+- **État** : ✅ J6 complété — architecture cible en place, `tsc` vert, tests E2E verts, Resonance supprimé.
+- **Fini quand** : ✅ Grand Refactor terminé.
 
 ### 🎨 L'édition du terrain
 Peindre des matériaux, lever du relief, sur le terrain plat actuel — « j'édite, le son suit »

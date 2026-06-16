@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Coords, Vector3 } from '../engine/context/coords.js'
 import { HEAD_FACES } from '../engine/context/coords.js'
 import type { Terrain } from '../engine/world/Terrain.js'
+import type { WorldObject } from '../engine/world/objects.js'
 import { MATERIALS } from '../engine/components/materials.js'
 import type { RenderTarget, RenderWorld } from './RenderTarget.js'
 
@@ -41,7 +42,7 @@ export class ThreeRenderer implements RenderTarget {
 
   get canvas(): HTMLCanvasElement { return this.renderer.domElement }
 
-  constructor(coords: Coords, terrain: Terrain, canvas?: HTMLCanvasElement) {
+  constructor(coords: Coords, terrain: Terrain, objects: WorldObject[] = [], canvas?: HTMLCanvasElement) {
     this.coords = coords
     this.size = coords.size
 
@@ -57,6 +58,7 @@ export class ThreeRenderer implements RenderTarget {
     this.buildWorldCube()
     this.buildGroundGrid()
     this.buildRelief(terrain)
+    this.buildObjects(objects)
     this.headGroup = this.buildHead()
     this.scene.add(this.headGroup)
     this.buildRain()
@@ -156,6 +158,42 @@ export class ThreeRenderer implements RenderTarget {
 
       const edgeGeo = new THREE.EdgesGeometry(merged)
       const edgeMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.2 })
+      const edges = new THREE.LineSegments(edgeGeo, edgeMat)
+      this.scene.add(edges)
+      this.reliefEdges.push(edges)
+    }
+  }
+
+  /* Objets posés (objects.ts) : une boîte par objet, centrée sur sa position monde,
+     groupée et colorée par matériau comme le relief. Wireframe cohérent avec le
+     terrain ; donne le repère visuel des surfaces que la pluie frappe en hauteur. */
+  private buildObjects(objects: WorldObject[]): void {
+    if (!objects.length) return
+    const groups = new Map<number, THREE.BoxGeometry[]>()
+
+    for (const obj of objects) {
+      const [w, h, d] = obj.size
+      const [x, y, z] = obj.position
+      const matId = MATERIALS.findIndex(m => m.id === obj.materialId)
+      const box = new THREE.BoxGeometry(w, h, d)
+      box.translate(x, y, z)
+      const key = matId < 0 ? 0 : matId
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(box)
+    }
+
+    for (const [matIndex, boxes] of groups) {
+      if (boxes.length === 0) continue
+      const merged = boxes.length === 1 ? boxes[0] : mergeGeometries(boxes)
+      const color = MATERIALS[matIndex]?.debugColor ?? WIRE_DIM
+
+      const faceMat = new THREE.MeshBasicMaterial({ color: 0x000000, polygonOffset: true, polygonOffsetFactor: 1 })
+      const mesh = new THREE.Mesh(merged.clone(), faceMat)
+      this.scene.add(mesh)
+      this.reliefMeshes.push(mesh)
+
+      const edgeGeo = new THREE.EdgesGeometry(merged)
+      const edgeMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.45 })
       const edges = new THREE.LineSegments(edgeGeo, edgeMat)
       this.scene.add(edges)
       this.reliefEdges.push(edges)

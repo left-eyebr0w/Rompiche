@@ -80,23 +80,12 @@ export class Terrain {
   }
 }
 
-/* Terrain initial reproduisant la scène figée actuelle : métal sur la moitié
-   gauche (x < 0), bâche sur la moitié droite. Le matériau est échantillonné au
-   centre de chaque cellule, donc la frontière est quantifiée au pas de 0,5 m
-   (au lieu du x=0 exact d'avant) — imperceptible à l'oreille, et c'est désormais
-   la donnée-terrain, plus un test codé en dur. */
+/* Terrain initial : sol PLAT uniforme en terre. Le relief de test (bloc surélevé)
+   et la frontière métal/bâche désactivable ont été retirés (cadrage 04 §3.3) :
+   on repart sur une base saine. Les matières variées et l'élévation sont désormais
+   portées par les OBJETS posés (objects.ts → makeTestScene), pas par le terrain. */
 export function makeDefaultTerrain({ size, cell, block }: { size: number; cell: number; block: number }): Terrain {
   const terrain = new Terrain({ size, cell, block })
-  terrain.fill((cx) => (cx < 0 ? 'metal' : 'bache'))
-  /* Relief de test (T-0.D1) : bloc surélevé à 2 m dans le quadrant x<0, z<0.
-     Prouve que la face HAUT reçoit de l'énergie (impact au-dessus du sol). */
-  const half = size / 2
-  for (let br = 0; br < terrain.brows; br++) {
-    for (let bc = 0; bc < terrain.bcols; bc++) {
-      const cx = (bc + 0.5) * block - half
-      const cz = (br + 0.5) * block - half
-      if (cx < 0 && cz < 0) terrain.height[br * terrain.bcols + bc] = 2
-    }
-  }
+  terrain.fill(() => 'terre')
   return terrain
 }

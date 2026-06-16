@@ -1,3 +1,4 @@
+import { FIXED_DT } from '../loop/loop.js'
 import type { Vector3 } from '../context/coords.js'
 import type { System } from '../loop/loop.js'
 import type { EngineContext } from '../context/EngineContext.js'
@@ -8,6 +9,26 @@ import type { Banks } from '../../audio/banks.js'
 interface ActiveGrain {
   source: AudioBufferSourceNode
   gain: GainNode
+}
+
+/* LOOKAHEAD : marge devant l'horloge matérielle pour absorber le jitter rAF/JS. */
+const LOOKAHEAD = 0.06
+/* Plafond de dérive du playhead devant l'horloge audio. Au-delà, la latence
+   « grimpe » (retour de background : la boucle a fait une rafale de ticks bornée
+   par MAX_CATCHUP pendant que le temps audio avançait peu). On resynchronise. */
+const MAX_DRIFT = LOOKAHEAD + FIXED_DT
+
+/* Résout la tranche audio d'un tick + le playhead suivant, avec DOUBLE garde-fou
+   (symétrique) :
+     - bas  : playhead en retard sur l'horloge (under-run, stalls JS, 1ᵉʳ tick) → resync ;
+     - haut : playhead trop en avance (latence qui grimpe au retour de background ou
+              dérive d'horloge) → resync.
+   Invariant garanti : t − now ∈ [0.005, MAX_DRIFT]. Pur (testable sans audio). */
+export function resolvePlayhead(playhead: number, now: number): { t: number; next: number } {
+  let p = playhead
+  if (p < now + 0.005) p = now + LOOKAHEAD          // garde-fou bas
+  else if (p - now > MAX_DRIFT) p = now + LOOKAHEAD  // garde-fou haut (symétrique)
+  return { t: p, next: p + FIXED_DT }
 }
 
 export function createAudioSyncSystem(
@@ -24,6 +45,13 @@ export function createAudioSyncSystem(
      pré-spatialisation), comme la v0 (RainSampler.level). Alimente voice.levelDb. */
   const analysers = new Map<number, AnalyserNode>()
   const measureBuf = new Float32Array(256)
+
+  /* Tête de lecture audio CONTINUE (« A Tale of Two Clocks »). La boucle est
+     cadencée par rAF (horloge murale, jitter) mais on programme les grains sur la
+     timeline audio matérielle, qu'on fait avancer de FIXED_DT par tick logique.
+     Chaque tick possède donc sa tranche de 16,6 ms, indépendante du jitter rAF →
+     plus de paquets/trous alignés sur le framerate (la pulsation perçue). */
+  let playhead = -1
 
   function rmsDb(an: AnalyserNode): number {
     an.getFloatTimeDomainData(measureBuf)
@@ -51,8 +79,13 @@ export function createAudioSyncSystem(
       }
     }
 
+    /* Réserver la tranche audio de ce tick. Le double garde-fou de resolvePlayhead
+       resynchronise le playhead s'il prend du retard (under-run) OU s'il dérive trop
+       en avance (latence au retour de background) → un seul micro-trou dans ces cas. */
+    const { t, next } = resolvePlayhead(playhead, backend.currentTime)
+    playhead = next
+
     /* 2) Démotions : fade-out puis stop (AVANT les onsets, cf. voicePool.ts). */
-    const t = backend.currentTime
     for (const d of ctx.frame.demotions) {
       const g = grains.get(d.voice)
       if (!g) continue
@@ -80,10 +113,15 @@ export function createAudioSyncSystem(
 
       src.setMaterial(voice.materialId)
 
-      /* Couper le grain précédent s'il existe encore. */
+      /* Couper le grain précédent s'il existe encore — avec un fondu de 5 ms
+         (comme les démotions), jamais un stop() sec qui claque. */
       const prev = grains.get(o.voice)
       if (prev) {
-        try { prev.source.stop() } catch { /* déjà stoppé */ }
+        prev.gain.gain.cancelScheduledValues(t)
+        prev.gain.gain.setValueAtTime(prev.gain.gain.value, t)
+        prev.gain.gain.linearRampToValueAtTime(0, t + 0.005)
+        prev.source.onended = null
+        try { prev.source.stop(t + 0.005) } catch { /* déjà stoppé */ }
         grains.delete(o.voice)
       }
 
@@ -91,12 +129,23 @@ export function createAudioSyncSystem(
       grainSrc.buffer = buf
       grainSrc.detune.value = voice.grain
 
+      /* Étalement sous-tick : jouer le grain à son instant Poisson dans la fenêtre
+         du tick, pas à l'instant du tick. Sans ça, toutes les gouttes d'un tick
+         démarrent ensemble → pulsation à la fréquence de tick (60 Hz). */
+      const at = t + (o.offset ?? 0)
+
       const grainGain = audioCtx.createGain()
-      grainGain.gain.value = 1
+      /* Fondu d'entrée de ~4 ms : un grain qui passe de 0 à plein volume
+         instantanément produit un clic. Multiplié par des dizaines de gouttes/s,
+         c'est la saccade perçue.
+         Le palier tient compte du rainGainDb (défaut 0 dB = gain 1). */
+      const rainLin = Math.pow(10, (ctx.rainGainDb ?? 0) / 20)
+      grainGain.gain.setValueAtTime(0, at)
+      grainGain.gain.linearRampToValueAtTime(rainLin, at + 0.004)
 
       const an = analysers.get(o.voice)
       grainSrc.connect(grainGain).connect(an ?? src.input)
-      grainSrc.start()
+      grainSrc.start(at)
 
       const vid = o.voice
       grainSrc.onended = () => {
@@ -122,5 +171,8 @@ export function createAudioSyncSystem(
     let headPos: Vector3 = { x: 0, y: 0, z: 0 }
     for (const e of headEntities) { headPos = e.transform!.position; break }
     backend.setListener(headPos, { x: 0, y: 0, z: -1 }, { x: 0, y: 1, z: 0 })
+
+    /* 6) Appliquer le gain master (relatif au gain de base du backend). */
+    backend.setMasterGainDb(ctx.masterGainDb ?? 0)
   }
 }

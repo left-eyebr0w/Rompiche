@@ -25,6 +25,10 @@ export interface Impact {
   dist?: number
   /** Couche de destination, posée par LodRoutingSystem. */
   layer?: Layer
+  /** Décalage sous-tick (s) de l'impact dans la fenêtre du tick, calculé par le
+     processus de Poisson. Permet d'étaler les onsets dans le temps audio au lieu
+     de les empiler à l'instant du tick (sinon : pulsation à la fréquence de tick). */
+  offset?: number
 }
 
 /** Une démotion de voix (vol/fade-out) décidée au tick courant. */
@@ -39,6 +43,9 @@ export interface Demotion {
 export interface GrainOnset {
   /** Identifiant de la voix qui démarre un grain. */
   voice: number
+  /** Décalage sous-tick (s) hérité de l'impact : quand jouer le grain dans la
+     fenêtre du tick, relatif au temps audio courant. */
+  offset?: number
 }
 
 /** Canaux mono-tick exposés par ctx.frame, vidés en début de tick (§3.4). */

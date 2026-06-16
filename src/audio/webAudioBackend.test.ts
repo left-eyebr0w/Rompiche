@@ -3,7 +3,10 @@ import { WebAudioBackend } from './WebAudioBackend.js'
 
 /* Mock minimal AudioContext (env node, pas de Web Audio natif). */
 function makeAudioCtxMock() {
-  const makeParam = () => ({ value: 0 })
+  const makeParam = () => {
+    const p = { value: 0, setTargetAtTime: vi.fn((v: number) => { p.value = v }) }
+    return p
+  }
   const makeNode = () => ({ connect: vi.fn().mockReturnThis(), disconnect: vi.fn() })
   return {
     currentTime: 42,

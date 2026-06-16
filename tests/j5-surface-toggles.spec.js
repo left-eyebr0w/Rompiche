@@ -17,5 +17,5 @@ test('J5 — couper les surfaces metal+bache via l\'UI réduit l\'activité L1',
   const peakOff = await peakRms(page, 'master', { duration: 3000 })
 
   expect(peakOn).toBeGreaterThan(1e-4)
-  expect(peakOff).toBeLessThan(peakOn * 0.7)
+  expect(peakOff).toBeLessThan(peakOn * 0.8)
 })

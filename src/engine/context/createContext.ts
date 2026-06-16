@@ -11,23 +11,25 @@ import { makeCoords, headInputToWorld } from './coords.js'
 import { makeWorldConfig, résoudreCouches, type WorldConfig } from './worldConfig.js'
 import { makeDefaultTerrain } from '../world/Terrain.js'
 import { makeDefaultWorld } from '../world/World.js'
+import { makeTestScene } from '../world/objects.js'
 // prng.js : JS non typé (Resource déterministe). On le relie à l'interface Prng.
 import { makePrng } from './prng.js'
 import { ManualClock } from '../../platform/ManualClock.js'
+import { SAMPLE_COUNTS } from '../components/materials.js'
 import type { EngineContext, Prng, InputChannels } from './EngineContext.js'
 import type { ClockSource } from '../../platform/ClockSource.js'
 import type { ControlState } from '../../shared/commands.js'
 
-/** État de contrôle au repos (auditeur centré, pluie active, surfaces actives). */
+/** État de contrôle au repos (auditeur centré, pluie active). */
 export function defaultControls(): ControlState {
   return {
     listener: { x: 0, y: 0, z: 0 },
     density: 0.5,
     gain: 0,
+    rainGainDb: 0,
+    masterGainDb: 0,
     wind: { force: 0, rot: 0, tilt: 0 },
     rain: true,
-    metal: true,
-    bache: true,
     listening: true,
   }
 }
@@ -51,7 +53,8 @@ export function createHeadlessContext(opts: HeadlessOptions = {}): EngineContext
   const worldConfig = makeWorldConfig({ seed, platform })
   const coords = makeCoords(worldConfig.size)
   const terrain = makeDefaultTerrain({ size: coords.size, cell: coords.CELL, block: coords.BLOCK })
-  const world = makeDefaultWorld({ terrain, coords })
+  const objects = makeTestScene(coords)
+  const world = makeDefaultWorld({ terrain, coords, objects })
   const prng = makePrng(seed) as Prng
   const bands = résoudreCouches(coords.worldRadius, worldConfig)
 
@@ -63,16 +66,18 @@ export function createHeadlessContext(opts: HeadlessOptions = {}): EngineContext
     prng,
     time: { tick: 0, seconds: 0 },
     bands,
-    surfaces: { metal: 1, bache: 1, terre: 1 },
     cooldown: new Map<number, number>(),
+    /* Un seul flux Poisson (slot 'terre') depuis la simplification J4 : RainPoisson
+       tire sur un pool unique, plus de partition par matériau. */
     poisson: {
-      metal: { acc: 0, next: 0, rr: 0 },
-      bache: { acc: 0, next: 0, rr: 0 },
-      terre: { acc: 0, next: 0, rr: 0 },
+      terre: { acc: 0, next: 0 },
     },
+    sampleCounts: SAMPLE_COUNTS,
     frame: { impacts: [], demotions: [], grainOnsets: [] },
     faceLevels: [-Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity],
     headWorldPos: headInputToWorld(defaultControls().listener, coords),
+    rainGainDb: 0,
+    masterGainDb: 0,
     input: emptyInput(),
     // audio / render : absents en headless (optionnels, §2.1)
   }

@@ -4,8 +4,8 @@
 > cible) est dans [architecture.md](architecture.md) ; ce document fige le *comment on y va sans
 > perdre le seul code qui sonne juste*. C'est le découpage fin annoncé par [plan.md §5](plan.md).
 
-**Dernière mise à jour** : 14 juin 2026
-**Statut** : ✅ J0/J1/J2/J3/J4/J5 COMPLÉTÉS — J6 à démarrer (swap Web Audio).
+**Dernière mise à jour** : 15 juin 2026
+**Statut** : ✅ J0/J1/J2/J3/J4/J5/J6 COMPLÉTÉS — Grand Refactor terminé, architecture cible en place.
 
 ---
 
@@ -166,7 +166,7 @@ v0 (`ds/ui_kits/diorama`) qui tourne encore — bascule réelle au J5.
 - **v0 conservée comme oracle A/B** : non supprimée en J5 ; suppression prévue à la validation finale du J6.
 
 ### J6 — Swap audio **temps 2** : `ResonanceBackend` → `WebAudioBackend`
-**⏳ À DÉMARRER — dernier jalon (clôt le refactor)**
+**✅ COMPLÉTÉ — dernier jalon (clôt le refactor)**
 - **Livrable** : `PannerNode` HRTF par voix ; **reconstruction explicite** de la réverb
   (`ConvolverNode` ← `enclosedVolume()`) et de l'occlusion (passe-bas sur le send) — ce que
   Resonance offrait gratuitement. Bascule derrière la **même couture** `SpatialAudioBackend` :

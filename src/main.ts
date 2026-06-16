@@ -7,9 +7,10 @@ import { createWorld } from './engine/ecs/world.js'
 import { createLoop } from './engine/loop/loop.js'
 import { createHeadlessContext } from './engine/context/createContext.js'
 import { createEngineSystems, setupSimWorld } from './engine/systems/index.js'
+import { createRenderSyncSystem } from './engine/systems/renderSync.js'
 import { WebAudioBackend } from './audio/WebAudioBackend.js'
 import { loadBanks } from './audio/banks.js'
-import { RafClock } from './platform/RafClock.js'
+import { WorkletClock } from './platform/WorkletClock.js'
 import { ThreeRenderer } from './render/ThreeRenderer.js'
 import { FlatWorld } from './engine/world/World.js'
 import App from './ui/App.js'
@@ -17,14 +18,34 @@ import App from './ui/App.js'
 const root = document.getElementById('root')!
 const uiContainer = document.getElementById('ui')!
 
-const clock = new RafClock()
+/* AudioContext créé tôt, en état `suspended` (autorisé sans geste utilisateur) :
+   le WorkletClock — maître d'horloge — en a besoin dès la construction. Le worklet
+   ne tourne (et la simulation n'avance) qu'une fois le contexte `running`, c.-à-d.
+   après le 1ᵉʳ geste qui le `resume()`. C'est voulu : pas d'audio = pas de tick. */
+const audioCtx = new AudioContext()
+const clock = new WorkletClock(audioCtx)
 const ctx = createHeadlessContext({ clock })
 const world = createWorld()
 setupSimWorld(world, ctx, 0.5)
 
 const flatWorld = ctx.world as FlatWorld
-const renderer = new ThreeRenderer(ctx.coords, flatWorld.terrain)
+const renderer = new ThreeRenderer(ctx.coords, flatWorld.terrain, flatWorld.objects)
 ctx.render = renderer
+
+/* ── Boucle de RENDU, pilotée par rAF, découplée du pas fixe (architecture.md §2)
+   Le rendu n'est plus un système de la boucle de simulation : il tourne sur sa
+   propre horloge rAF, qui a le DROIT de geler hors focus / écran éteint (c'est
+   voulu : en background, on ne dessine pas, mais la simu+audio continuent via le
+   worklet). Lancée tout de suite → la scène est vivante AVANT le 1ᵉʳ geste audio
+   (plus de scène figée tant que l'AudioContext est suspended). */
+const renderTick = createRenderSyncSystem(renderer, world)
+let renderRaf = 0
+function renderLoop(): void {
+  renderTick(ctx, 0)  // draw() lit l'état courant ; dt ignoré (rAF a sa propre horloge)
+  renderRaf = requestAnimationFrame(renderLoop)
+}
+renderRaf = requestAnimationFrame(renderLoop)
+void renderRaf  // conservé pour un éventuel cancelAnimationFrame (dispose)
 
 let analyser: AnalyserNode | null = null
 let masterBuf = new Float32Array(256)
@@ -95,7 +116,6 @@ root.appendChild(boot)
 
 async function startEngine(): Promise<void> {
   try {
-    const audioCtx = new AudioContext()
     const backend = new WebAudioBackend()
     backend.init(audioCtx)
     ctx.audio = backend
@@ -106,7 +126,7 @@ async function startEngine(): Promise<void> {
     if (backend.masterGain) backend.masterGain.connect(analyser)
 
     const banks = await loadBanks(audioCtx)
-    const systems = createEngineSystems(world, ctx, banks, audioCtx, renderer)
+    const systems = createEngineSystems(world, ctx, banks, audioCtx)
     createLoop(ctx, systems)
     await clock.start()
     audioReady = true

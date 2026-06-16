@@ -12,8 +12,10 @@
    pour forward-compat ; inerte cette passe. */
 
 import { buildTerrainMesh, type TerrainVertex, type TerrainMesh } from './terrainMesh.js'
+import { buildObjectVertices } from './objectMesh.js'
 import { materialById, type Material, type MaterialId } from '../components/materials.js'
 import type { Terrain } from './Terrain.js'
+import type { WorldObject } from './objects.js'
 import type { Coords, Vector3 } from '../context/coords.js'
 
 /** Résultat d'une requête de colonne 2.5D (détail interne de l'implémentation plate). */
@@ -55,14 +57,24 @@ export interface WorldQuery {
 export class FlatWorld implements WorldQuery {
   terrain: Terrain
   coords: Coords
+  /** Objets posés (couche de placement, objects.ts) — exposés pour le rendu. */
+  objects: WorldObject[]
   private _edits: Map<string, ColumnSurface>
+  /** Pool fusionné terrain + objets, baké une fois à la construction. */
   private _mesh: TerrainVertex[]
+  /** Sous-pool des seuls vertices d'objets (pour nearestSurface). */
+  private _objMesh: TerrainVertex[]
 
-  constructor(terrain: Terrain, coords: Coords) {
-    this.terrain = terrain
-    this.coords  = coords
-    this._edits  = new Map()
-    this._mesh   = buildTerrainMesh(terrain, coords).vertices
+  constructor(terrain: Terrain, coords: Coords, objects: WorldObject[] = []) {
+    this.terrain  = terrain
+    this.coords   = coords
+    this.objects  = objects
+    this._edits   = new Map()
+    /* « Objets frappés par la pluie » = leurs faces dans le pool d'impacts. Baké
+       une fois : le pivot WorldQuery absorbe les objets sans toucher RainPoisson,
+       qui consomme impactPoints() à l'identique (cadrage 04 §2). */
+    this._objMesh = objects.flatMap(o => buildObjectVertices(o, coords))
+    this._mesh    = [...buildTerrainMesh(terrain, coords).vertices, ...this._objMesh]
   }
 
   /* Requête audio unique 2.5D : (x,z) → {y, material, skyExposed}.
@@ -91,9 +103,26 @@ export class FlatWorld implements WorldQuery {
     const surf = this.rainSurfaceAt(p.x, p.z)
     const material = materialById(surf.material)
     if (!material) return null
-    /* En 2.5D, la surface est le toit de la colonne ; la distance est la hauteur
-       du point au-dessus de ce toit (jamais négative côté ciel). */
-    return { distance: Math.max(0, p.y - surf.y), material }
+    /* En 2.5D, la surface terrain est le toit de la colonne ; la distance est la
+       hauteur du point au-dessus de ce toit (jamais négative côté ciel). */
+    let best = Math.max(0, p.y - surf.y)
+    let bestMat = material
+
+    /* Les objets sont des points 3D au-dessus de la colonne : on prend le plus
+       proche s'il bat le toit du terrain. Chemin SECONDAIRE — le matériau d'un
+       impact de pluie vient déjà du vertex piqué (rainPoisson) ; nearestSurface
+       sert l'audio de proximité, pas le routage des grains (cadrage 04 §2). */
+    for (const v of this._objMesh) {
+      const dx = v.position.x - p.x
+      const dy = v.position.y - p.y
+      const dz = v.position.z - p.z
+      const dObj = Math.sqrt(dx * dx + dy * dy + dz * dz)
+      if (dObj < best) {
+        const m = materialById(v.matériau)
+        if (m) { best = dObj; bestMat = m }
+      }
+    }
+    return { distance: best, material: bestMat }
   }
 
   /* Pas de murs en wireframe (v1) : aucun obstacle à intersecter. Stub neutre,
@@ -117,6 +146,8 @@ export class FlatWorld implements WorldQuery {
   }
 }
 
-export function makeDefaultWorld({ terrain, coords }: { terrain: Terrain; coords: Coords }): FlatWorld {
-  return new FlatWorld(terrain, coords)
+export function makeDefaultWorld(
+  { terrain, coords, objects = [] }: { terrain: Terrain; coords: Coords; objects?: WorldObject[] },
+): FlatWorld {
+  return new FlatWorld(terrain, coords, objects)
 }

@@ -78,16 +78,20 @@ export interface SpatialField {
   p: number
   floor: number
   ky: number
+  upBias: number
 }
 
-const DEFAULT_FIELD: SpatialField = { core: 0, sigma: 10, p: 2, floor: 0, ky: 0 }
+const DEFAULT_FIELD: SpatialField = { core: 0, sigma: 10, p: 2, floor: 0, ky: 0, upBias: 0 }
 
 /** Poids de tirage d'un point à la distance (paramétrée) de la tête :
-      w(d) = floor + (1 − floor) · exp( −0.5 · (max(0, d−core)/σ)^p ),  d² = dx² + dz² + (ky·dy)² */
+      w(d) = floor + (1 − floor) · exp( −0.5 · (max(0, d−core)/σ)^p ),  d² = dx² + dz² + (ky·dy)²
+    upBias décale le centre de la PDF vers le haut : le poids maximal est atteint
+    à head.y + upBias, ce qui concentre les gouttes au-dessus de l'auditeur. */
 export function spatialWeight(p: TerrainVertex, head: Vector3, f: SpatialField): number {
   const dx = p.position.x - head.x
   const dz = p.position.z - head.z
-  const dy = (p.position.y - head.y) * f.ky
+  const headY = head.y + (f.upBias ?? 0)
+  const dy = (p.position.y - headY) * f.ky
   const d = Math.sqrt(dx * dx + dz * dz + dy * dy)
   const sigma = f.sigma > 1e-6 ? f.sigma : 1e-6
   const dOut = d > f.core ? d - f.core : 0

@@ -90,7 +90,7 @@ export function createVoicePoolSystem(world: GameWorld, ctx: EngineContext): Sys
       /* Onset : la voix vient d'être (ré)acquise → l'AudioSync joue un nouveau grain.
          Sur un vol, la démotion (cut) ET l'onset (start) pointent la même voix :
          l'AudioSync traite les démotions AVANT les onsets → coupe puis redémarre. */
-      c.frame.grainOnsets.push({ voice: target.id })
+      c.frame.grainOnsets.push({ voice: target.id, offset: imp.offset })
     }
   }
 }

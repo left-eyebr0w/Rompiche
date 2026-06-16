@@ -39,8 +39,6 @@ export interface PoissonState {
   acc: number
   /** Intervalle (ms) avant le prochain impact (tiré ∼ exp(λ)). */
   next: number
-  /** Round-robin de sélection d'échantillon. */
-  rr: number
 }
 
 /** Canaux d'entrée UI → moteur (§5.2). */
@@ -62,12 +60,14 @@ export interface EngineContext {
   time: LogicalClock
   /** Frontières de couches r1/r2/overlap (dérivées de worldConfig+coords). */
   bands: LayerBoundaries
-  /** Densité d'activité par matériau [0..1] (0 = surface coupée). Miroir v0 surfaceDensities. */
-  surfaces: Record<MaterialId, number>
   /** Cooldown par cellule (clé = index de cellule → dernier temps logique d'impact, s). */
   cooldown: Map<number, number>
-  /** État d'intégration Poisson par matériau. */
-  poisson: Record<MaterialId, PoissonState>
+  /** État d'intégration Poisson : flux unique (slot 'terre') depuis la
+     simplification J4 — un seul pool, plus de partition par matériau. */
+  poisson: { terre: PoissonState }
+  /** Nombre d'échantillons par matériau (métadonnée d'assets). Source de vérité du
+     tirage d'échantillon uniforme de rainPoisson. */
+  sampleCounts: Record<MaterialId, number>
   /** Tampons de frame mono-tick, vidés en début de tick. */
   frame: FrameEvents
   /** Niveaux directionnels des 6 faces de la tête (projetés par FaceProjectionSystem). */
@@ -75,6 +75,10 @@ export interface EngineContext {
   /** Position monde de la tête, mise à jour par InputSystem chaque tick.
      Cache de ctx.world de l'entité { listener, transform } pour les systèmes sans world. */
   headWorldPos: Vector3
+  /** Gain pluie en dB, appliqué par AudioSync à chaque grain. */
+  rainGainDb: number
+  /** Gain master en dB, appliqué par AudioSync au masterGain du backend. */
+  masterGainDb: number
   input: InputChannels
   /* Adaptateurs liés au DOM / AudioContext : injectés par la platform au démarrage,
      LÉGITIMEMENT ABSENTS en test headless (le cœur tourne sans audio ni rendu, §2.1). */

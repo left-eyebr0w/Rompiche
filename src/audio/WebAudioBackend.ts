@@ -1,6 +1,6 @@
-/* ── WebAudioBackend — SpatialAudioBackend natif (J6, swap temps 2) ──────────
-   Remplace ResonanceBackend (temps 1, bibliothèque Google morte). Branche derrière
-   la même couture SpatialAudioBackend : audioSync ne change pas.
+/* ── WebAudioBackend — SpatialAudioBackend natif (J6) ─────────────────────────
+   Implementation unique et finale derrière la couture SpatialAudioBackend.
+   audioSync ne change pas (branche sur la même interface).
 
    Graphe par voix :
      src.input (BiquadFilter lowpass)  → PannerNode (HRTF, inverse) → masterGain
@@ -63,9 +63,14 @@ export class WebAudioBackend implements SpatialAudioBackend {
     return {
       get input(): AudioNode { return occFilter },
       setPosition(p: Vector3): void {
-        panner.positionX.value = p.x
-        panner.positionY.value = p.y
-        panner.positionZ.value = p.z
+        /* Rampe courte (≈10 ms) au lieu d'un saut instantané : en HRTF, un
+           changement brutal de position téléporte la voix L↔R et claque.
+           setTargetAtTime lisse le déplacement sans traîner. */
+        const now = ctx.currentTime
+        const tau = 0.01
+        panner.positionX.setTargetAtTime(p.x, now, tau)
+        panner.positionY.setTargetAtTime(p.y, now, tau)
+        panner.positionZ.setTargetAtTime(p.z, now, tau)
       },
       setMaterial(id: MaterialId | null): void {
         const mat = id ? materialById(id) : null
@@ -77,6 +82,18 @@ export class WebAudioBackend implements SpatialAudioBackend {
         panner.disconnect()
       },
     }
+  }
+
+  private _masterBaseGain = 3
+
+  setMasterGainDb(db: number): void {
+    const ctx = this._ctx
+    if (!ctx || !this.masterGain) return
+    const now = ctx.currentTime
+    const target = this._masterBaseGain * Math.pow(10, db / 20)
+    this.masterGain.gain.cancelScheduledValues(now)
+    this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now)
+    this.masterGain.gain.linearRampToValueAtTime(target, now + 0.05)
   }
 
   setListener(pos: Vector3, forward: Vector3, up: Vector3): void {

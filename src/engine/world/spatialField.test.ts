@@ -35,7 +35,7 @@ function meanPickDistance(field: SpatialField, n = 6000, seed = 123): number {
   return sum / n
 }
 
-const base: Omit<SpatialField, 'core'> = { sigma: 10, p: 2, floor: 0, ky: 0 }
+const base: Omit<SpatialField, 'core'> = { sigma: 10, p: 2, floor: 0, ky: 0, upBias: 0 }
 
 describe('PDF L1 — paramètre core (plateau de cœur)', () => {
   it('core=0 (défaut) favorise nettement les points proches de la tête', () => {

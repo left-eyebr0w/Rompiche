@@ -70,7 +70,7 @@ export interface WorldSave {
    le debug et les valeurs purement éphémères sont exclus). */
 const SAVED_STATE_KEYS: (keyof DioramaStatePatch)[] = [
   'rain', 'wind', 'windTilt', 'windRotation', 'windForce',
-  'metal', 'bache', 'x', 'y', 'z', 'density', 'gain',
+  'x', 'y', 'z', 'density', 'gain',
   'spin', 'zoom', 'clockMode', 'clockSegment', 'seed', 'platform',
 ]
 
