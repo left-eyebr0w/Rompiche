@@ -75,6 +75,7 @@ export function createHeadlessContext(opts: HeadlessOptions = {}): EngineContext
     sampleCounts: SAMPLE_COUNTS,
     frame: { impacts: [], demotions: [], grainOnsets: [] },
     faceLevels: [-Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity],
+    l3Level: -Infinity,
     headWorldPos: headInputToWorld(defaultControls().listener, coords),
     rainGainDb: 0,
     masterGainDb: 0,

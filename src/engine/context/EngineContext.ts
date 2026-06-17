@@ -72,6 +72,9 @@ export interface EngineContext {
   frame: FrameEvents
   /** Niveaux directionnels des 6 faces de la tête (projetés par FaceProjectionSystem). */
   faceLevels: [number, number, number, number, number, number]
+  /** Niveau de sortie réel (dB) de la nappe diffuse L3, mesuré par DiffuseBedSystem.
+     -Infinity tant que la nappe est silencieuse / absente (headless). */
+  l3Level: number
   /** Position monde de la tête, mise à jour par InputSystem chaque tick.
      Cache de ctx.world de l'entité { listener, transform } pour les systèmes sans world. */
   headWorldPos: Vector3

@@ -34,16 +34,19 @@ export function createEngineStore(
     let steals = 0
 
     const matCounts: Record<string, { count: number; gainSum: number }> = {}
+    let l1GainSum = 0   // somme des niveaux linéaires des voix L1 (couche héros)
 
     for (const e of voices) {
       const v = e.voice!
       size++
       if (v.busy) {
         busy++
+        const lin = isFinite(v.levelDb) ? Math.pow(10, v.levelDb / 20) : 0
+        l1GainSum += lin
         const matId = v.materialId ?? 'unknown'
         if (!matCounts[matId]) matCounts[matId] = { count: 0, gainSum: 0 }
         matCounts[matId].count++
-        matCounts[matId].gainSum += isFinite(v.levelDb) ? Math.pow(10, v.levelDb / 20) : 0
+        matCounts[matId].gainSum += lin
       }
     }
 
@@ -66,12 +69,18 @@ export function createEngineStore(
     }
 
     const linMaster = getMasterLevel()
+    const l1Level = l1GainSum > 1e-9 ? 20 * Math.log10(l1GainSum) : -Infinity
     return {
       ready: !!ctx.audio,
       master: linMaster > 1e-9 ? 20 * Math.log10(linMaster) : -Infinity,
       pool: { busy, size, steals },
       materials,
       faceLevels: [...ctx.faceLevels] as [number, number, number, number, number, number],
+      layers: {
+        L1: { level: l1Level },
+        L2: { level: -Infinity },   // Phase L2 (secteurs) non livrée
+        L3: { level: ctx.l3Level },
+      },
     }
   }
 

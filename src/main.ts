@@ -9,6 +9,7 @@ import { createHeadlessContext } from './engine/context/createContext.js'
 import { createEngineSystems, setupSimWorld } from './engine/systems/index.js'
 import { createRenderSyncSystem } from './engine/systems/renderSync.js'
 import { WebAudioBackend } from './audio/WebAudioBackend.js'
+import { DiffuseBed } from './audio/DiffuseBed.js'
 import { loadBanks } from './audio/banks.js'
 import { WorkletClock } from './platform/WorkletClock.js'
 import { ThreeRenderer } from './render/ThreeRenderer.js'
@@ -66,7 +67,8 @@ const FIELD_KEYS: ReadonlyArray<string> = Object.freeze(['rate', 'core', 'sigma'
   debug: {},
   get rms(): Record<string, number> {
     const m = getMasterLevel()
-    return { master: m, l1: m, l2: 0, l3: 0 }
+    const l3 = isFinite(ctx.l3Level) ? Math.pow(10, ctx.l3Level / 20) : 0
+    return { master: m, l1: m, l2: 0, l3 }
   },
   field: {
     get(): Record<string, number> | null {
@@ -126,7 +128,21 @@ async function startEngine(): Promise<void> {
     if (backend.masterGain) backend.masterGain.connect(analyser)
 
     const banks = await loadBanks(audioCtx)
-    const systems = createEngineSystems(world, ctx, banks, audioCtx)
+
+    /* Couche L3 — nappe diffuse. Le worklet de bruit est chargé ici (à côté du
+       clock-processor) ; la nappe se branche sur le masterGain du backend. Seed
+       dérivée du PRNG moteur (déterminisme). Le DiffuseBedSystem la pilote. */
+    let bed: DiffuseBed | undefined
+    if (backend.masterGain) {
+      await audioCtx.audioWorklet.addModule(
+        new URL('./audio/worklets/noise-processor.js', import.meta.url),
+      )
+      const seed = Math.floor(ctx.prng.aléa() * 0xffffffff) + 1
+      bed = new DiffuseBed(audioCtx, backend.masterGain, seed)
+      bed.attachWorklet('pink')
+    }
+
+    const systems = createEngineSystems(world, ctx, banks, audioCtx, undefined, bed)
     createLoop(ctx, systems)
     await clock.start()
     audioReady = true

@@ -149,7 +149,7 @@ export default function DebugHUD({ store, fieldViz, onToggleFieldViz }: DebugHUD
     setField((f: any) => ({ ...f, [key]: val }))
   }
 
-  const { master, pool, materials, faceLevels } = snapshot
+  const { master, pool, materials, faceLevels, layers } = snapshot
 
   return (
     <aside className="dbg">
@@ -176,6 +176,25 @@ export default function DebugHUD({ store, fieldViz, onToggleFieldViz }: DebugHUD
 
         <section className="dbg__sec">
           <div className="dbg__sech">Sortie master (post-atténuation) · {dbStr(master)}</div>
+        </section>
+
+        <section className="dbg__sec">
+          <div className="dbg__sech">Couches · niveaux réels</div>
+          <div className="dbg__faces">
+            {([
+              ['L1 héros', layers.L1.level],
+              ['L2 secteurs', layers.L2.level],
+              ['L3 nappe', layers.L3.level],
+            ] as const).map(([label, lvl]) => (
+              <div key={label} className="dbg__face">
+                <span className="dbg__flabel" style={{ width: 64, flexBasis: 64 }}>{label}</span>
+                <div className="dbg__ftrack">
+                  <div className="dbg__ffill" style={{ width: dbToWidth(lvl) + '%' }} />
+                </div>
+                <span className="dbg__fdb">{dbStr(lvl)}</span>
+              </div>
+            ))}
+          </div>
         </section>
 
         <section className="dbg__sec">

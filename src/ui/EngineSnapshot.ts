@@ -15,6 +15,12 @@ export interface MaterialMeter {
   triggerCount: number
 }
 
+/** Niveau réel d'une couche audio (L1/L2/L3), mesuré côté moteur. dB ; -Infinity
+   si la couche est muette ou pas encore branchée (L2 tant que Phase L2 non livrée). */
+export interface LayerMeter {
+  level: number
+}
+
 export interface EngineSnapshot {
   /** Moteur démarré (sera un enum de lifecycle au-delà de J0). */
   ready: boolean
@@ -24,4 +30,7 @@ export interface EngineSnapshot {
   materials: MaterialMeter[]
   /** Niveaux directionnels des 6 faces de la tête (projetés côté moteur). */
   faceLevels: [number, number, number, number, number, number]
+  /** Niveau réel par couche (L1 héros, L2 secteurs, L3 nappe). Projeté côté moteur.
+     L2 reste -Infinity tant que la Phase L2 (secteurs) n'est pas livrée. */
+  layers: { L1: LayerMeter; L2: LayerMeter; L3: LayerMeter }
 }

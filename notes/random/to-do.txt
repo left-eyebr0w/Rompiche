@@ -8,8 +8,9 @@
 [ ] - Ajouter un slider de rotation en Y de la tête (360°) dans les controle de la tête du joueur
 [ ] - Adapter les slider de position de la tête aux dimensions du diorama
 [ ] - Améliorer les GUI, les rendre plus ergonomiques
+[ ] - Rajouter menu pour les objets
 
-[ ] - Améliorer la scène : elle est pas cohérente. Moitié métal semi-indenté, moitié bache, c'est trop bizarre. 
+[X] - Améliorer la scène : elle est pas cohérente. Moitié métal semi-indenté, moitié bache, c'est trop bizarre. 
 Il faudrait une scène simple pour débugguer efficacement. Pour que ça soit simple de la créer, il faut implémenter les objects.
 Actuellement, la semi-indentation carré n'est pas satisfaisante ; Le terrain doit être plat. Il ne faudrait pas que les éléments soient désactivables, cette zone du menu, c'est du débug. Il faut la supprimer/deplacer.
 Pour tester la spatialité et l'élévation, il faudrait placer des objects de différentes materière en hauteur.

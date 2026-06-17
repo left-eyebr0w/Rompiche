@@ -11,11 +11,13 @@ import { createRainPoissonSystem } from './rainPoisson.js'
 import { createLodRoutingSystem } from './lodRouting.js'
 import { createVoicePoolSystem } from './voicePool.js'
 import { createAudioSyncSystem } from './audioSync.js'
+import { createDiffuseBedSystem } from './diffuseBed.js'
 import { createFaceProjectionSystem } from './faceProjection.js'
 import type { System } from '../loop/loop.js'
 import type { EngineContext } from '../context/EngineContext.js'
 import type { GameWorld } from '../ecs/world.js'
 import type { Banks } from '../../audio/banks.js'
+import type { DiffuseBed } from '../../audio/DiffuseBed.js'
 
 /** Construit les systèmes de simulation pure (pas d'audio ni rendu), liés au World. */
 export function createSimSystems(world: GameWorld, ctx: EngineContext, inputDeps?: InputSystemDeps): System[] {
@@ -38,10 +40,14 @@ export function createEngineSystems(
   banks: Banks,
   audioCtx: AudioContext,
   inputDeps?: InputSystemDeps,
+  bed?: DiffuseBed,
 ): System[] {
   return [
     ...createSimSystems(world, ctx, { world, audioCtx, ...inputDeps }),
     createAudioSyncSystem(world, ctx, banks, audioCtx),
+    /* Nappe diffuse L3 : ajoutée seulement si le bed audio est présent (jamais en
+       headless). Indépendante des voix/du frame — pilotée par l'intensité de pluie. */
+    ...(bed ? [createDiffuseBedSystem(world, bed)] : []),
     createFaceProjectionSystem(world),
   ]
 }
