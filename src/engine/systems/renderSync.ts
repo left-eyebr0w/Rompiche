@@ -13,20 +13,21 @@ export function createRenderSyncSystem(renderer: ThreeRenderer, gameWorld: GameW
     for (const e of headEntities) { headPos = e.transform!.position; break }
     const debug = (window as any).__rompiche?.debug ?? {}
 
-    const voices: { x: number; y: number; z: number; level: number; materialId: string }[] = []
+    const voices: { x: number; y: number; z: number; level: number; layer: 'L1' | 'L2' }[] = []
     for (const e of gameWorld.with('voice')) {
       const v = e.voice!
       if (v.busy) voices.push({
         x: v.pos.x, y: v.pos.y, z: v.pos.z,
         level: v.gainDb,
-        materialId: v.materialId ?? 'unknown',
+        layer: v.layer,
       })
     }
 
     renderer.setHeadPosition(headPos)
     renderer.setListening(ctrl.listening)
     renderer.setRain(ctrl.rain, ctrl.density, ctrl.wind)
-    renderer.setFieldViz(!!debug.fieldViz, ctx.worldConfig?.l1Field)
+    /* Viz des zones de pluie : disque L1 (rL1) + anneau L2 (rMaxL2), cf. rain config. */
+    renderer.setFrontierViz(!!debug.frontierViz, ctx.worldConfig?.rain)
     renderer.setDebugVoices(voices, !!debug.debugOn)
     renderer.draw(null as any, 0)
   }

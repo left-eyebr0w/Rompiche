@@ -6,7 +6,7 @@ window.React = React
 import { createWorld } from './engine/ecs/world.js'
 import { createLoop } from './engine/loop/loop.js'
 import { createHeadlessContext } from './engine/context/createContext.js'
-import { createEngineSystems, setupSimWorld } from './engine/systems/index.js'
+import { createEngineSystems, setupSimWorld, resizeVoicePool } from './engine/systems/index.js'
 import { createRenderSyncSystem } from './engine/systems/renderSync.js'
 import { WebAudioBackend } from './audio/WebAudioBackend.js'
 import { DiffuseBed } from './audio/DiffuseBed.js'
@@ -60,7 +60,8 @@ function getMasterLevel(): number {
   return Math.sqrt(sq / masterBuf.length)
 }
 
-const FIELD_KEYS: ReadonlyArray<string> = Object.freeze(['rate', 'core', 'sigma', 'p', 'floor', 'ky'])
+/* Paramètres de génération de pluie réglables live (2 flux Poisson + zones). */
+const RAIN_KEYS: ReadonlyArray<string> = Object.freeze(['lambdaL1', 'lambdaL2', 'rL1', 'rMaxL2', 'regimeMult'])
 ;(window as any).__rompiche = {
   ctx,
   world,
@@ -68,20 +69,27 @@ const FIELD_KEYS: ReadonlyArray<string> = Object.freeze(['rate', 'core', 'sigma'
   get rms(): Record<string, number> {
     const m = getMasterLevel()
     const l3 = isFinite(ctx.l3Level) ? Math.pow(10, ctx.l3Level / 20) : 0
-    return { master: m, l1: m, l2: 0, l3 }
+    return { master: m, l1: m, l3 }
   },
-  field: {
+  /* Redimensionnement live du pool de voix par couche (sliders HUD « voix L1/L2 »).
+     Met aussi à jour le budget dans la config pour que le HUD reflète la valeur. */
+  resizeVoices(layer: 'L1' | 'L2', count: number): void {
+    resizeVoicePool(world, layer, count)
+    if (layer === 'L1') ctx.worldConfig.layers.L1.voices = count
+    else ctx.worldConfig.layers.L2.voicesMax = count
+  },
+  rain: {
     get(): Record<string, number> | null {
-      const f = ctx.worldConfig.l1Field
-      return f ? { ...f } : null
+      const r = ctx.worldConfig.rain
+      return r ? { ...r } : null
     },
     set(partial: Record<string, number>): Record<string, number> | null {
-      const f = ctx.worldConfig.l1Field
-      if (!f || !partial) return null
-      for (const k of FIELD_KEYS) {
-        if (typeof partial[k] === 'number') (f as any)[k] = partial[k]
+      const r = ctx.worldConfig.rain
+      if (!r || !partial) return null
+      for (const k of RAIN_KEYS) {
+        if (typeof partial[k] === 'number') (r as any)[k] = partial[k]
       }
-      return { ...f }
+      return { ...r }
     },
   },
 }

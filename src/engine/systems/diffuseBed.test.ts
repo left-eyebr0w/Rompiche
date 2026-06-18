@@ -36,7 +36,7 @@ describe('DiffuseBedSystem — pont intensité → nappe L3', () => {
     const sys = createDiffuseBedSystem(world, bed)
     sys(ctx, 1 / 60)
 
-    expect(calls.at(-1)).toBeCloseTo(0.7)
+    expect(calls[calls.length - 1]).toBeCloseTo(0.7)
     expect(ctx.l3Level).toBeCloseTo(-40 + 0.7 * 28)
     expect(ctx.l3Level).toBeGreaterThan(-Infinity)
   })

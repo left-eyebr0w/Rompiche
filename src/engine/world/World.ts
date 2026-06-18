@@ -13,6 +13,7 @@
 
 import { buildTerrainMesh, type TerrainVertex, type TerrainMesh } from './terrainMesh.js'
 import { buildObjectVertices } from './objectMesh.js'
+import { makeSkyOcclusion } from './skyOcclusion.js'
 import { materialById, type Material, type MaterialId } from '../components/materials.js'
 import type { Terrain } from './Terrain.js'
 import type { WorldObject } from './objects.js'
@@ -70,17 +71,23 @@ export class FlatWorld implements WorldQuery {
     this.coords   = coords
     this.objects  = objects
     this._edits   = new Map()
+    /* Faces cachées (cadrage 07) : un testeur d'occlusion verticale partagé, qui
+       connaît terrain + objets AVANT le bake, pour qu'un objet puisse abriter le
+       sol sous lui (et un autre objet). Construit d'abord, consommé par les deux
+       bakers ci-dessous → expoCiel cohérent entre terrain et objets. */
+    const occlusion = makeSkyOcclusion(terrain, coords, objects)
     /* « Objets frappés par la pluie » = leurs faces dans le pool d'impacts. Baké
        une fois : le pivot WorldQuery absorbe les objets sans toucher RainPoisson,
-       qui consomme impactPoints() à l'identique (cadrage 04 §2). */
-    this._objMesh = objects.flatMap(o => buildObjectVertices(o, coords))
-    this._mesh    = [...buildTerrainMesh(terrain, coords).vertices, ...this._objMesh]
+       qui consomme impactPoints() à l'identique (cadrage 04 §2). Le bake écarte
+       déjà les flancs/dessous (filtre de normale) et marque les points abrités. */
+    this._objMesh = objects.flatMap(o => buildObjectVertices(o, coords, occlusion))
+    this._mesh    = [...buildTerrainMesh(terrain, coords, occlusion).vertices, ...this._objMesh]
   }
 
   /* Requête audio unique 2.5D : (x,z) → {y, material, skyExposed}.
      À l'intérieur de la slice : délègue à terrain.cellAt (bounds-checking inclus).
      Au-delà : matériau uniforme 'terre' au niveau du sol.
-     Détail interne consommé par L2 (SectorField) ; nearestSurface s'appuie dessus. */
+     nearestSurface s'appuie dessus. */
   rainSurfaceAt(x: number, z: number): ColumnSurface {
     const edit = this._edits.get(`${Math.round(x)},${Math.round(z)}`)
     if (edit) return { ...edit }

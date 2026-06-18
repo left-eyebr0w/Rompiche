@@ -24,7 +24,8 @@ export function createDiffuseBedSystem(world: GameWorld, bed: DiffuseBed): Syste
     for (const e of emitters) {
       if (e.rainEmitter!.active) { intensity = e.rainEmitter!.density; break }
     }
-    bed.setIntensity(intensity)
+    /* Gain de couche L3 (solo/mute) : module l'intensité de la nappe (cadrage 05 §Instrument). */
+    bed.setIntensity(intensity * (ctx.layerGain?.L3 ?? 1))
     ctx.l3Level = bed.levelDb()
   }
 }

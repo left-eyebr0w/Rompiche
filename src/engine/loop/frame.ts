@@ -13,18 +13,22 @@ export type SampleRef = number
 /** Couche LOD de destination d'un impact (architecture.md §3.3). */
 export type Layer = 'L1' | 'L2' | 'L3'
 
-/** Un impact de pluie tiré au tick courant. Origine v0 : tickPoisson → trigger.
-   `dist`/`layer` sont renseignés par LodRoutingSystem (layer undefined = pas encore
-   routé, ou rejeté par le cooldown de cellule). */
+/** Un impact de pluie tiré au tick courant. Posé entièrement par RainPoissonSystem
+   (deux flux de Poisson L1/L2, cf. notes/random/pluie.txt) : la couche est fixée à
+   l'émission — plus d'étape de routage a posteriori. */
 export interface Impact {
   surface: MaterialId
   pos: Vector3
   detune: number
   sample: SampleRef
-  /** Distance à l'auditeur (m), posée par LodRoutingSystem. */
+  /** Distance horizontale à l'auditeur (m), posée par RainPoissonSystem. */
   dist?: number
-  /** Couche de destination, posée par LodRoutingSystem. */
+  /** Couche de destination (fixée par le flux Poisson émetteur). */
   layer?: Layer
+  /** Position de timbre ∈ [0,1] dérivée de la distance (0 = L1 proche / timbre clair,
+     1 = bord externe de l'anneau L2 / timbre sourd). Pilote l'interpolation de timbre
+     (flou/pitch) côté audio. */
+  mix?: number
   /** Décalage sous-tick (s) de l'impact dans la fenêtre du tick, calculé par le
      processus de Poisson. Permet d'étaler les onsets dans le temps audio au lieu
      de les empiler à l'instant du tick (sinon : pulsation à la fréquence de tick). */
@@ -50,7 +54,7 @@ export interface GrainOnset {
 
 /** Canaux mono-tick exposés par ctx.frame, vidés en début de tick (§3.4). */
 export interface FrameEvents {
-  /** RainPoissonSystem pousse → VoicePool/LodRouting drainent. */
+  /** RainPoissonSystem pousse (couche déjà fixée) → VoicePool draine. */
   impacts: Impact[]
   /** VoicePoolSystem pousse (sur vol) → AudioSync applique le fade-out. */
   demotions: Demotion[]

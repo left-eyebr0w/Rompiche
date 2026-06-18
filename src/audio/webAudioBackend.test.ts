@@ -26,6 +26,7 @@ function makeAudioCtxMock() {
     })),
     createBiquadFilter: vi.fn(() => ({ ...makeNode(), type: '', frequency: makeParam() })),
     createConvolver: vi.fn(() => makeNode()),
+    createDelay: vi.fn(() => ({ ...makeNode(), delayTime: makeParam() })),
   }
 }
 

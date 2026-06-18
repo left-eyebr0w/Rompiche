@@ -20,8 +20,55 @@ export interface L1Config {
 
 export interface L2Config {
   rMax: number
-  sectors: number
-  débitMax: number
+  voicesMax: number   // quota de voix L2 (budget séparé de L1)
+}
+
+/** Génération de pluie par DEUX flux de Poisson indépendants (cadrage notes/random/pluie.txt).
+   Chaque couche d'événements a son propre débit λ (gouttes/s) et tire ses points dans
+   sa ZONE géométrique disjointe (distance horizontale d = √(dx²+dz²) à la tête) :
+     • L1 (héros, proche) : disque  d ∈ [0, rL1]
+     • L2 (lointaine)     : anneau  d ∈ [rL1, rMaxL2]
+   La couche d'une goutte est décidée PAR LE FLUX qui l'émet (plus de routage zonal
+   probabiliste a posteriori). Le débit effectif d'un flux = λ × regimeMult × density.
+   La voix porte un `mix` ∈ [0,1] DÉRIVÉ de la distance réelle (continu sur l'anneau L2)
+   qui pilote l'interpolation de timbre (flou/pitch) côté audio — mix=0 pour L1.
+   - lambdaL1   : débit du flux héros L1 (gouttes/s à regimeMult=density=1)
+   - lambdaL2   : débit du flux lointain L2 (gouttes/s à regimeMult=density=1)
+   - rL1        : rayon (m) du disque proche L1 (= bord interne de l'anneau L2)
+   - rMaxL2     : rayon (m) externe de l'anneau L2 (au-delà → fondu perceptif dans L3)
+   - regimeMult : multiplicateur global sur les λ (levier de régime bruine→averse) */
+export interface RainConfig {
+  lambdaL1: number
+  lambdaL2: number
+  rL1: number
+  rMaxL2: number
+  regimeMult: number
+}
+
+/** Paramètres de TIMBRE de la pluie, réglables à l'oreille (ex-constantes en dur). */
+export interface GrainConfig {
+  duréeS: number       // durée nominale d'un grain (s) — ex-GRAIN_DURATION_S
+  detuneSpan: number   // amplitude crête-à-crête du détune aléatoire (cents)
+  attaqueS: number     // fondu d'entrée anti-clic (s) — ex-0.004
+  cooldownS: number    // anti-mitraillage par cellule (s) — ex-COOLDOWN_S
+}
+
+/** Timbre des voix « flouté + pitché » (cadrage rework/06), interpolé par voix selon
+   son `mix` ∈ [0,1] (0 = réglages L1, 1 = réglages L2). Réglable live.
+   - lowpassHzL1/L2 : fréquence de coupure du passe-bas (Hz). Plus bas = plus sourd/lointain.
+   - diffusionL1/L2 : quantité de halo (réseau de délais), wet [0..1].
+   - pitchL1/L2     : décalage de hauteur en DEMI-TONS (×100 → cents en interne), s'ajoute
+                      au détune aléatoire du grain.
+   - delayS / feedback : réglages globaux du réseau de délais partagé (temps, retour). */
+export interface TimbreConfig {
+  lowpassHzL1: number
+  lowpassHzL2: number
+  diffusionL1: number
+  diffusionL2: number
+  pitchL1: number
+  pitchL2: number
+  delayS: number
+  feedback: number
 }
 
 export interface L3FilterConfig {
@@ -48,28 +95,6 @@ export interface WeatherConfig {
   dir: number
 }
 
-/** Champ de répartition spatiale des gouttes HÉROS L1 (couche L1 découplée).
-   La probabilité de tirage d'une goutte candidate à distance d de la tête suit
-     w(d) = floor + (1 − floor) · exp( −0.5 · (max(0, d−core)/σ)^p ),  d² = dx² + dz² + (ky·dy)²
-   - rate  : débit de gouttes héros L1 (grains/s à density=1), INDÉPENDANT de L2/L3
-   - core  : rayon (m) d'un plateau de poids maximal autour de la tête (cœur dense uniforme) ;
-             découplé de σ — au-delà du cœur, la diffusion reprend en σ. 0 = pas de plateau.
-   - sigma : rayon de diffusion (m) au-delà du cœur ; petit = serré autour de la tête
-   - p     : forme (1 = pointu/exponentiel, 2 = gaussien, >2 = plateau central puis chute)
-   - floor : poids résiduel des gouttes lointaines [0..1] (0 = disparaissent)
-   - ky    : poids de l'axe vertical (0 = répartition 2D plate, 1 = vraie sphère 3D)
-   - upBias: décalage vertical (m) du centre de la PDF vers le haut ; les gouttes
-             sont plus probables au-dessus de la tête qu'en dessous (pluie naturelle) */
-export interface L1FieldConfig {
-  rate: number
-  core: number
-  sigma: number
-  p: number
-  floor: number
-  ky: number
-  upBias: number
-}
-
 export interface WorldConfig {
   size: number
   seed: number
@@ -77,14 +102,12 @@ export interface WorldConfig {
   ambisonicOrder: number
   layers: LayersConfig
   weather: WeatherConfig
-  /** Répartition spatiale des gouttes héros L1 (couche L1 découplée). Réglable live. */
-  l1Field: L1FieldConfig
-  /** Débit-cible de gouttes L1 (grains/s) pour density=1, INDÉPENDANT de la
-     résolution de grille. Le débit effectif = density · dropletRate, réparti
-     entre matériaux au prorata de leur surface exposée. Réglable (UI/preset) :
-     c'est le levier d'intensité de la pluie. À tenir sous le débit soutenable du
-     pool (≈ voices/duréeGrain) pour éviter la saturation/vol de voix permanent. */
-  dropletRate: number
+  /** Génération de pluie : 2 flux de Poisson (L1/L2) + zones géométriques. Réglable live. */
+  rain: RainConfig
+  /** Timbre de la pluie (durée/détune/attaque/cooldown). Réglable live. */
+  grain: GrainConfig
+  /** Timbre « flouté + pitché » des voix, interpolé L1↔L2 par mix. Réglable live. */
+  timbre: TimbreConfig
 }
 
 export interface LayerBoundaries {
@@ -122,7 +145,9 @@ const COMMON = {
     priorité: { w_gain: 0.40, w_dist: 0.40, w_att: 0.15, w_age: 0.10 },
     seuilWeakDb: -45,
   },
-  L2: { débitMax: 120 },
+  L2: {
+    voicesMax: 10,   // budget du pool de voix L2 (séparé de L1)
+  },
   L3: { ordre: 1, filtre: { centreHz: 1600, largeurHz: 4000 } },
 }
 
@@ -130,7 +155,7 @@ const COMMON = {
    retirée : Rompiche est un diorama unique. Ces constantes sont la seule source
    de l'échelle ; si un jour d'autres tailles reviennent, elles repasseront par
    l'interface WorldQuery, pas par une table de presets recâblée partout. */
-const WORLD = { size: 25, L1rMax: 12, L2rMax: 20, sectors: 8, crossfade: 0.30 }
+const WORLD = { size: 25, L1rMax: 12, L2rMax: 20, crossfade: 0.30 }
 
 /** Crée un WorldConfig complet. */
 export function makeWorldConfig(
@@ -140,37 +165,38 @@ export function makeWorldConfig(
   const plat = platform ?? detectPlatform()
   const pl = PLATFORM_PRESETS[plat]
 
-  /* Le secteur count est le min de ce que le monde autorise et de la plateforme */
-  const sectors = Math.min(p.sectors, pl.sectorsL2)
-
   return {
     size: p.size,
     seed,
     platform: plat,
     ambisonicOrder: pl.ambisonicOrder,
     layers: {
-      /* Quand L2 est absent (sectors=0), l'hémisphère arrière n'a aucun autre support :
-         on neutralise le biais d'attention du vol de voix (w_att) pour ne pas raboter
-         en continu les voix derrière l'auditeur et détruire le surround. */
       L1: {
         ...COMMON.L1,
         voices: pl.voicesL1,
         rMax: p.L1rMax,
-        priorité: { ...COMMON.L1.priorité, w_att: sectors > 0 ? COMMON.L1.priorité.w_att : 0 },
       },
-      L2: { ...COMMON.L2, rMax: p.L2rMax, sectors },
+      L2: { ...COMMON.L2, rMax: p.L2rMax },
       L3: { ...COMMON.L3 },
       crossfade: p.crossfade,
       hystérésis: 1,
     },
     weather: { intensité: 0.5, vent: 0, dir: 0 },
-    /* Couche L1 héros découplée : son propre débit + répartition spatiale réglable.
-       ky=1 → vraie sphère 3D (le défaut demandé) ; σ=10 m, p=2 (gaussien), petit plancher ;
-       core=0 → pas de plateau central par défaut (à régler à l'oreille). */
-    l1Field: { rate: 60, core: 0, sigma: 10, p: 2, floor: 0.02, ky: 1, upBias: 2.0 },
-    /* Débit du flux BULK (alimente L2 secteurs / L3 nappe), INDÉPENDANT du grid.
-       density=0,5 (défaut) = pluie posée. Découplé du débit héros L1 (l1Field.rate). */
-    dropletRate: 120,
+    /* Deux flux de Poisson (notes/random/pluie.txt) : L1 héros dans le disque proche
+       (rL1=8 m), L2 lointain dans l'anneau 8→20 m. λ = gouttes/s à regime=density=1 ;
+       L1 plus dense que L2 (héros proches). À caler à l'oreille. */
+    rain: { lambdaL1: 40, lambdaL2: 20, rL1: 8, rMaxL2: p.L2rMax, regimeMult: 1 },
+    /* Timbre de la pluie (ex-constantes en dur, désormais réglables à l'oreille). */
+    grain: { duréeS: 0.3, detuneSpan: 40, attaqueS: 0.004, cooldownS: 0.08 },
+    /* Timbre flouté/pitché interpolé L1↔L2 (cadrage rework/06). L1 = clair/proche
+       (coupe haute, pas de halo, pas de pitch) ; L2 = sourd/lointain (coupe basse,
+       un peu de halo, légèrement plus grave). Délai partagé pour la diffusion. */
+    timbre: {
+      lowpassHzL1: 18000, lowpassHzL2: 3500,
+      diffusionL1: 0, diffusionL2: 0.35,
+      pitchL1: 0, pitchL2: -3,
+      delayS: 0.08, feedback: 0.35,
+    },
   }
 }
 

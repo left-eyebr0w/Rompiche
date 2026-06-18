@@ -8,7 +8,12 @@
 
    Réverb (ConvolverNode) et occlusion (BiquadFilter) sont câblés CORRECTS mais
    DORMANTS en monde plat (enclosedVolume=0, isOccluded=0).
-   Ils s'activeront aux chantiers terrain / monde vivant sans toucher à ce module. */
+   Ils s'activeront aux chantiers terrain / monde vivant sans toucher à ce module.
+
+   Bus de DIFFUSION partagé (« flou » des voix, cadrage rework/06) :
+     diffusionInput → delay → masterGain
+                        ↑___ feedback (gain) ___|
+   Réseau de délais à retour. Les grains y envoient un wet ∝ mix (audioSync). */
 
 import type { SpatialAudioBackend, SpatialSource } from './SpatialAudioBackend.js'
 import type { Vector3 } from '../engine/context/coords.js'
@@ -19,6 +24,9 @@ export class WebAudioBackend implements SpatialAudioBackend {
   private _ctx: AudioContext | null = null
   masterGain: GainNode | null = null
   private _reverbSend: GainNode | null = null
+  private _diffusionIn: GainNode | null = null
+  private _diffusionDelay: DelayNode | null = null
+  private _diffusionFb: GainNode | null = null
 
   init(ctx: AudioContext): void {
     this._ctx = ctx
@@ -34,6 +42,32 @@ export class WebAudioBackend implements SpatialAudioBackend {
     const reverb = ctx.createConvolver()
     reverbSend.connect(reverb).connect(masterGain)
     this._reverbSend = reverbSend
+
+    /* Bus de diffusion partagé (réseau de délais à retour) : diffusionIn → delay →
+       master, avec une boucle de retour delay → fb → delay. Réglé par setDiffusion. */
+    const diffusionIn = ctx.createGain()
+    diffusionIn.gain.value = 1
+    const delay = ctx.createDelay(1.0)
+    delay.delayTime.value = 0.08
+    const fb = ctx.createGain()
+    fb.gain.value = 0.35
+    diffusionIn.connect(delay)
+    delay.connect(fb).connect(delay)   // boucle de retour
+    delay.connect(masterGain)
+    this._diffusionIn = diffusionIn
+    this._diffusionDelay = delay
+    this._diffusionFb = fb
+  }
+
+  get diffusionInput(): AudioNode | null { return this._diffusionIn }
+
+  setDiffusion(delayS: number, feedback: number): void {
+    const ctx = this._ctx
+    if (!ctx || !this._diffusionDelay || !this._diffusionFb) return
+    const now = ctx.currentTime
+    this._diffusionDelay.delayTime.setTargetAtTime(Math.max(0, delayS), now, 0.02)
+    /* feedback borné < 1 pour éviter l'emballement (auto-oscillation). */
+    this._diffusionFb.gain.setTargetAtTime(Math.min(0.95, Math.max(0, feedback)), now, 0.02)
   }
 
   get currentTime(): number {

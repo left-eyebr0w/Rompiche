@@ -10,6 +10,25 @@ import type { RenderTarget, RenderWorld } from './RenderTarget.js'
 const WIRE_DIM = 0x888888
 const WIRE_FAINT = 0x444444
 const HC_COLOR = 0xffffff
+/* Couleurs des couches : L1 = or (proche, héros), L2 = bleu-cyan (lointain). Partagées
+   par les gizmos de voix et la viz de frontière dans le diorama. */
+const L1_COLOR = 0xe8c96d
+const L2_COLOR = 0x5fd0e8
+
+/* Cercle filaire horizontal (plan XZ) de rayon r, centré sur l'origine du groupe
+   parent (la tête). Sert de coquille de champ : la répartition est un disque
+   (cylindre infini sur l'axe vertical), donc on visualise des cercles, pas des sphères. */
+function makeHorizontalCircle(r: number, color: number, opacity: number, segs = 64): THREE.LineLoop {
+  const pts: number[] = []
+  for (let i = 0; i < segs; i++) {
+    const a = (i / segs) * Math.PI * 2
+    pts.push(Math.cos(a) * r, 0, Math.sin(a) * r)
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
+  return new THREE.LineLoop(geo, mat)
+}
 
 export class ThreeRenderer implements RenderTarget {
   private renderer: THREE.WebGLRenderer
@@ -34,9 +53,8 @@ export class ThreeRenderer implements RenderTarget {
   private _rainOn = false
   private _lastRainTime = 0
 
-  private fieldGroup?: THREE.Group
-  private _fieldVizOn = false
-  private _fieldKey = ''
+  private frontierGroup?: THREE.Group
+  private _frontierKey = ''
 
   private voiceGroup?: THREE.Group
 
@@ -62,7 +80,7 @@ export class ThreeRenderer implements RenderTarget {
     this.headGroup = this.buildHead()
     this.scene.add(this.headGroup)
     this.buildRain()
-    this.buildFieldShells()
+    this.buildFrontierShells()
     this.buildVoiceMarkers()
 
     window.addEventListener('resize', this.onResize)
@@ -200,59 +218,52 @@ export class ThreeRenderer implements RenderTarget {
     }
   }
 
-  private buildFieldShells(): void {
+  private buildFrontierShells(): void {
     const group = new THREE.Group()
     group.visible = false
-    this.fieldGroup = group
+    this.frontierGroup = group
     this.scene.add(group)
-    /* Les coquilles sont construites à la première activation (setFieldViz). */
+    /* Coquilles construites à la première activation (setFrontierViz). */
   }
 
-  private rebuildShells(field?: { core?: number; sigma?: number; p?: number; floor?: number; ky?: number }): void {
-    if (!this.fieldGroup) return
-    while (this.fieldGroup.children.length) {
-      const c = this.fieldGroup.children[0]
+  /* Viz des zones de pluie (notes/random/pluie.txt) : 2 cercles horizontaux —
+     rL1 (bord du disque L1 proche) et rMaxL2 (bord externe de l'anneau L2). L'anneau
+     entre les deux est la zone L2. En bleu-cyan (couleur L2). */
+  private rebuildFrontier(rain?: { rL1?: number; rMaxL2?: number }): void {
+    if (!this.frontierGroup) return
+    while (this.frontierGroup.children.length) {
+      const c = this.frontierGroup.children[0]
       c.parent?.remove(c)
-      if (c instanceof THREE.LineSegments) {
+      if (c instanceof THREE.LineLoop) {
         c.geometry?.dispose()
         if (Array.isArray(c.material)) c.material.forEach(m => m.dispose())
         else c.material?.dispose()
       }
     }
 
-    if (!field) return
-    const { core = 0, sigma = 6, p = 1, floor = 0.05, ky = 0.6 } = field
-    const weights = [0.75, 0.5, 0.25, 0.1]
-    const segs = 20
-    const SHELL_COLOR = 0xe8c96d
+    if (!rain) return
+    const { rL1 = 8, rMaxL2 = 20 } = rain
+    const radii = [
+      { r: rL1,    opacity: 0.18 },
+      { r: rMaxL2, opacity: 0.18 },
+    ]
 
-    for (const wt of weights) {
-      if (wt <= floor) continue
-      const r = core + sigma * Math.pow(-2 * Math.log((wt - floor) / (1 - floor)), 1 / p)
+    for (const { r, opacity } of radii) {
       if (!isFinite(r) || r <= 0) continue
-
-      const geo = new THREE.SphereGeometry(r, segs, segs)
-      const edges = new THREE.EdgesGeometry(geo)
-      const mat = new THREE.LineBasicMaterial({
-        color: SHELL_COLOR, transparent: true, opacity: 0.15, depthWrite: false,
-      })
-      const shell = new THREE.LineSegments(edges, mat)
-      shell.scale.y = ky
-      this.fieldGroup.add(shell)
+      this.frontierGroup.add(makeHorizontalCircle(r, L2_COLOR, opacity))
     }
   }
 
-  setFieldViz(on: boolean, field?: { core?: number; sigma?: number; p?: number; floor?: number; ky?: number }): void {
-    this._fieldVizOn = on
-    if (!this.fieldGroup) return
+  setFrontierViz(on: boolean, rain?: { rL1?: number; rMaxL2?: number }): void {
+    if (!this.frontierGroup) return
     if (on) {
-      const key = field ? `${field.core},${field.sigma},${field.p},${field.floor},${field.ky}` : ''
-      if (key !== this._fieldKey) {
-        this._fieldKey = key
-        this.rebuildShells(field)
+      const key = rain ? `${rain.rL1},${rain.rMaxL2}` : ''
+      if (key !== this._frontierKey) {
+        this._frontierKey = key
+        this.rebuildFrontier(rain)
       }
     }
-    this.fieldGroup.visible = on
+    this.frontierGroup.visible = on
   }
 
   private buildVoiceMarkers(): void {
@@ -260,7 +271,10 @@ export class ThreeRenderer implements RenderTarget {
     group.visible = false
     this.voiceGroup = group
     this.scene.add(group)
-    const n = 40
+    /* Couvre le pool complet L1 + L2 au maximum réglable (sliders HUD : 64 + 64) :
+       sous-dimensionner masque silencieusement les voix L2 (énumérées après les L1),
+       qui ne s'affichaient alors jamais quand le pool L1 était plein. */
+    const n = 128
     const geo = new THREE.SphereGeometry(0.05, 8, 8)
     for (let i = 0; i < n; i++) {
       const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, opacity: 0.5 })
@@ -271,7 +285,7 @@ export class ThreeRenderer implements RenderTarget {
   }
 
   setDebugVoices(
-    voices: { x: number; y: number; z: number; level: number; materialId: string }[],
+    voices: { x: number; y: number; z: number; level: number; layer: 'L1' | 'L2' }[],
     on: boolean,
   ): void {
     if (!this.voiceGroup) return
@@ -283,7 +297,9 @@ export class ThreeRenderer implements RenderTarget {
         const m = markers[i]
         m.visible = true
         m.position.set(v.x, v.y, v.z)
-        const color = MATERIALS.find(mat => mat.id === v.materialId)?.debugColor ?? 0x888888
+        /* Couleur par couche : L1 = or (cohérent avec la sphère de champ), L2 = bleu-cyan
+           (gouttes lointaines). Plus de coloration par matériau. */
+        const color = v.layer === 'L2' ? L2_COLOR : L1_COLOR
         const mat = (Array.isArray(m.material) ? m.material[0] : m.material) as THREE.MeshBasicMaterial
         mat.color.setHex(color)
         const s = Math.max(0.5, Math.min(2, (v.level + 50) / 50))
@@ -348,7 +364,7 @@ export class ThreeRenderer implements RenderTarget {
       : 1
     this.headGroup.position.set(headPos.x, headPos.y, headPos.z)
     this.headGroup.scale.set(s, s, s)
-    if (this.fieldGroup) this.fieldGroup.position.set(headPos.x, headPos.y, headPos.z)
+    if (this.frontierGroup) this.frontierGroup.position.set(headPos.x, headPos.y, headPos.z)
 
     const spinRad = this.spin * Math.PI / 180
     const tiltRad = 22.5 * Math.PI / 180

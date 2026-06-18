@@ -46,6 +46,35 @@ const DBG_CSS = `
 .dbg__slr{ flex:1; min-width:0; accent-color:#e8c96d; height:3px; }
 .dbg__slv{ width:42px; text-align:right; font-size:9px; color:var(--on-ink-primary);
   font-variant-numeric:tabular-nums; }
+.dbg__slin{ width:42px; flex:0 0 42px; text-align:right; font-size:9px;
+  font-family:var(--font-mono); color:var(--on-ink-primary); font-variant-numeric:tabular-nums;
+  background:transparent; border:1px solid transparent; border-radius:2px; padding:1px 2px;
+  -moz-appearance:textfield; }
+.dbg__slin::-webkit-outer-spin-button,.dbg__slin::-webkit-inner-spin-button{
+  -webkit-appearance:none; margin:0; }
+.dbg__slin:hover{ border-color:rgba(255,255,255,.12); }
+.dbg__slin:focus{ outline:none; border-color:rgba(232,201,109,.5); color:#e8c96d; }
+.dbg__slunit{ width:12px; flex:0 0 12px; font-size:8px; color:var(--on-ink-faint); }
+.dbg__btn{ font-family:var(--font-mono); font-size:8px; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--on-ink-muted); background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.1); border-radius:3px; padding:3px 7px; cursor:pointer;
+  transition:background .05s, border-color .05s, color .05s; }
+.dbg__btn:hover{ border-color:rgba(232,201,109,.4); color:var(--on-ink-primary); }
+.dbg__btn.on{ background:rgba(232,201,109,.16); border-color:rgba(232,201,109,.5); color:#e8c96d; }
+.dbg__lgctl{ display:flex; gap:4px; margin-left:auto; }
+.dbg__lgbtn{ font-family:var(--font-mono); font-size:7px; letter-spacing:.04em;
+  text-transform:uppercase; color:var(--on-ink-faint); background:transparent;
+  border:1px solid rgba(255,255,255,.1); border-radius:2px; padding:1px 4px; cursor:pointer;
+  transition:background .05s, border-color .05s, color .05s; }
+.dbg__lgbtn:hover{ border-color:rgba(232,201,109,.4); color:var(--on-ink-primary); }
+.dbg__lgbtn.solo{ background:rgba(232,201,109,.18); border-color:rgba(232,201,109,.55); color:#e8c96d; }
+.dbg__lgbtn.mute{ background:rgba(214,90,90,.18); border-color:rgba(214,90,90,.55); color:#e08080; }
+.dbg__subh{ font-size:8px; letter-spacing:.14em; text-transform:uppercase;
+  color:rgba(232,201,109,.6); margin:14px 0 10px; padding-top:12px;
+  border-top:1px solid rgba(255,255,255,.06); }
+.dbg__sech--row{ display:flex; align-items:center; gap:8px; cursor:pointer;
+  user-select:none; }
+.dbg__caret{ font-size:8px; color:rgba(232,201,109,.5); transition:transform .1s; }
 `
 ;(function () {
   if (typeof document === 'undefined' || document.getElementById('dbg-css-j5')) return
@@ -69,85 +98,310 @@ function dbStr(db: number): string {
 
 export interface DebugHUDProps {
   store: EngineStore
-  fieldViz: boolean
-  onToggleFieldViz: () => void
+  frontierViz: boolean
+  onToggleFrontierViz: () => void
 }
 
-function FieldCurveField({ ctx }: { ctx: any }) {
-  const f = ctx?.worldConfig?.l1Field
-  if (!f) return null
-
-  const W = 244, H = 64, padL = 4, padR = 4, padT = 4, padB = 12
-  const { core = 0, sigma = 1, p = 1, floor = 0 } = f
-  const s = Math.max(0.1, sigma)
-  const c = Math.max(0, core)
-  const dMax = Math.max(c + s * 3, 12)
+/* Visualisation des ZONES de pluie par distance horizontale (notes/random/pluie.txt).
+   Axe X = distance tête→goutte. Deux zones DISJOINTES : disque L1 (jaune, [0, rL1])
+   et anneau L2 (cyan, [rL1, rMaxL2]). Sous l'axe, la bande de TIMBRE montre le mix :
+   plat (clair = L1) sur le disque, puis glissement clair→sourd à travers l'anneau L2
+   (mix 0→1) — exactement la dérivation de `mix` que RainPoisson applique. */
+function RainZonesCurve({ rain, timbre }: { rain: any; timbre: any }) {
+  if (!rain) return null
+  const W = 244, H = 60, padL = 4, padR = 4, padT = 4, padB = 24
+  const { rL1 = 8, rMaxL2 = 20 } = rain
+  const dMax = Math.max(rMaxL2 + 4, 16)
   const x0 = padL, x1 = W - padR, y0 = padT, y1 = H - padB
-  const sx = (d: number) => x0 + (d / dMax) * (x1 - x0)
-  const sy = (w: number) => y1 - w * (y1 - y0)
-  const w = (d: number) => floor + (1 - floor) * Math.exp(-0.5 * Math.pow(Math.max(0, d - c) / s, p))
-  const N = 56
-  let path = ''
-  for (let i = 0; i <= N; i++) {
-    const d = (i / N) * dMax
-    path += (i === 0 ? 'M' : 'L') + sx(d).toFixed(1) + ',' + sy(w(d)).toFixed(1) + ' '
-  }
-  const xSigma = sx(Math.min(c + s, dMax))
-  const yFloor = sy(floor)
+  const sx = (d: number) => x0 + (Math.min(d, dMax) / dMax) * (x1 - x0)
+  const xL1 = sx(rL1)
+  const xL2 = sx(rMaxL2)
 
+  /* Bande de timbre : clair (L1) sur tout le disque, puis dégradé clair→sourd sur l'anneau. */
+  const bandY = y1 + 5, bandH = 6
+  const gradId = 'dbg-timbre-grad'
+  const fL1 = (xL1 - x0) / (x1 - x0)
+  const fL2 = (xL2 - x0) / (x1 - x0)
   return (
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', marginTop: 2 }}>
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#e8c96d" stopOpacity="0.85" />
+          <stop offset={fL1} stopColor="#e8c96d" stopOpacity="0.85" />
+          <stop offset={fL2} stopColor="#5fd0e8" stopOpacity="0.7" />
+          <stop offset="1" stopColor="#5fd0e8" stopOpacity="0.35" />
+        </linearGradient>
+      </defs>
       <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} fill="rgba(255,255,255,.02)" />
-      {floor > 0.001 && (
-        <line x1={x0} y1={yFloor} x2={x1} y2={yFloor}
-          stroke="rgba(232,201,109,.35)" strokeWidth="1" strokeDasharray="2 3" />
-      )}
-      <line x1={xSigma} y1={y0} x2={xSigma} y2={y1}
+      {/* Disque L1 (jaune) et anneau L2 (cyan), disjoints. */}
+      <rect x={x0} y={y0} width={Math.max(0, xL1 - x0)} height={y1 - y0} fill="rgba(232,201,109,.14)" />
+      <rect x={xL1} y={y0} width={Math.max(0, xL2 - xL1)} height={y1 - y0} fill="rgba(95,208,232,.10)" />
+      <line x1={xL1} y1={y0} x2={xL1} y2={y1}
+        stroke="rgba(255,255,255,.22)" strokeWidth="1" strokeDasharray="2 3" />
+      <line x1={xL2} y1={y0} x2={xL2} y2={y1}
         stroke="rgba(255,255,255,.18)" strokeWidth="1" strokeDasharray="2 3" />
-      <path d={path} fill="none" stroke="#e8c96d" strokeWidth="1.5" />
-      <text x={Math.min(xSigma + 3, x1 - 14)} y={H - 2} fontSize="7"
-        fill="rgba(255,255,255,.4)" fontFamily="var(--font-mono)">σ</text>
-      <text x={x1 - 2} y={H - 2} fontSize="7" textAnchor="end"
+      <text x={(x0 + xL1) / 2} y={y0 + 12} fontSize="8" textAnchor="middle"
+        fill="rgba(232,201,109,.8)" fontFamily="var(--font-mono)">L1</text>
+      <text x={(xL1 + xL2) / 2} y={y0 + 12} fontSize="8" textAnchor="middle"
+        fill="rgba(95,208,232,.8)" fontFamily="var(--font-mono)">L2</text>
+      {/* Bande de timbre L1→L2 (présente seulement si la config timbre existe). */}
+      {timbre && <rect x={x0} y={bandY} width={x1 - x0} height={bandH} fill={`url(#${gradId})`} rx="1" />}
+      {timbre && (
+        <text x={x0 + 1} y={bandY + bandH + 7} fontSize="6"
+          fill="rgba(255,255,255,.35)" fontFamily="var(--font-mono)">timbre L1</text>
+      )}
+      {timbre && (
+        <text x={x1 - 1} y={bandY + bandH + 7} fontSize="6" textAnchor="end"
+          fill="rgba(255,255,255,.35)" fontFamily="var(--font-mono)">L2</text>
+      )}
+      <text x={x0 + 2} y={y1 + 8} fontSize="7"
+        fill="rgba(255,255,255,.4)" fontFamily="var(--font-mono)">proche</text>
+      <text x={x1 - 2} y={y1 + 8} fontSize="7" textAnchor="end"
         fill="rgba(255,255,255,.3)" fontFamily="var(--font-mono)">{dMax.toFixed(0)} m</text>
     </svg>
   )
 }
 
-function SliderRow({ k, min, max, step, value, onChange, fmt }: {
+/* Compte de décimales d'un pas (0.01 → 2) pour arrondir proprement molette/saisie. */
+function stepDecimals(step: number): number {
+  const s = String(step)
+  const i = s.indexOf('.')
+  return i < 0 ? 0 : s.length - i - 1
+}
+
+/* Ligne slider : range + champ NUMÉRIQUE éditable + molette au survol.
+   - molette : ±1 step (Shift = ×10), bornée à [min,max] ;
+   - champ : saisie libre, validée sur Entrée/blur (clamp + arrondi au step) ;
+   - `unit` : suffixe affiché à droite du nombre (m, c, ms…). Le nombre édité est
+     dans le DOMAINE du range — l'appelant fait la conversion d'unité comme avant. */
+function SliderRow({ k, min, max, step, value, onChange, fmt, unit }: {
   k: string; min: number; max: number; step: number; value: number;
-  onChange: (v: number) => void; fmt: (v: number) => string;
+  onChange: (v: number) => void; fmt: (v: number) => string; unit?: string;
 }) {
+  const dec = stepDecimals(step)
+  const clamp = (v: number) => Math.max(min, Math.min(max, v))
+  const round = (v: number) => parseFloat(clamp(v).toFixed(dec))
+  const [draft, setDraft] = React.useState<string | null>(null)
+
+  const commit = (raw: string) => {
+    const n = parseFloat(raw.replace(',', '.'))
+    if (isFinite(n)) onChange(round(n))
+    setDraft(null)
+  }
+  const onWheel = (e: React.WheelEvent) => {
+    e.preventDefault()
+    const mult = e.shiftKey ? 10 : 1
+    const dir = e.deltaY < 0 ? 1 : -1
+    onChange(round(value + dir * step * mult))
+  }
+
   return (
-    <div className="dbg__sl">
+    <div className="dbg__sl" onWheel={onWheel}>
       <span className="dbg__slk">{k}</span>
       <input
         className="dbg__slr" type="range" min={min} max={max} step={step} value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
       />
-      <span className="dbg__slv">{fmt(value)}</span>
+      <input
+        className="dbg__slin" type="number" min={min} max={max} step={step}
+        value={draft ?? round(value)}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { commit((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).blur() }
+          else if (e.key === 'Escape') { setDraft(null); (e.target as HTMLInputElement).blur() }
+        }}
+        title={fmt(value)}
+      />
+      {unit ? <span className="dbg__slunit">{unit}</span> : <span className="dbg__slunit" />}
     </div>
   )
 }
 
-export default function DebugHUD({ store, fieldViz, onToggleFieldViz }: DebugHUDProps) {
+/* Section repliable (cadrage 05 §Instrument item 10) : titre cliquable + caret. L'état
+   replié est purement UI (pas de moteur). `title` peut porter du JSX (niveaux live). */
+function Section(
+  { id, title, open, onToggle, children }:
+  { id: string; title: React.ReactNode; open: boolean; onToggle: (id: string) => void; children?: React.ReactNode },
+) {
+  return (
+    <section className="dbg__sec">
+      <div className="dbg__sech dbg__sech--row" onClick={() => onToggle(id)}>
+        <span className="dbg__caret" style={{ transform: open ? 'none' : 'rotate(-90deg)' }}>▾</span>
+        <span>{title}</span>
+      </div>
+      {open && children}
+    </section>
+  )
+}
+
+/* ── Persistance des réglages debug (localStorage) ──────────────────────────
+   On mémorise entre deux ouvertures du panneau : sections repliées, solo/mute,
+   et les valeurs réglables (rain : λ + zones, grain, timbre, budgets de voix).
+   Les valeurs sont REPOUSSÉES dans ctx au montage via les setters réels, pour
+   que l'affichage ET le son repartent du mix sauvegardé. */
+const PREFS_KEY = 'rompiche.debug.prefs.v1'
+
+interface DebugPrefs {
+  open?: Record<string, boolean>
+  solo?: 'L1' | 'L2' | 'L3' | null
+  muted?: Record<string, boolean>
+  rain?: Record<string, number>
+  grain?: Record<string, number>
+  timbre?: Record<string, number>
+  voices?: { L1?: number; L2?: number }
+}
+
+function loadPrefs(): DebugPrefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY)
+    return raw ? (JSON.parse(raw) as DebugPrefs) : {}
+  } catch { return {} }
+}
+
+function savePrefs(p: DebugPrefs): void {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)) } catch { /* quota/private mode */ }
+}
+
+/* Réécrit les nombres d'un preset dans une cible muable (config ctx), clé par clé. */
+function applyNums(target: any, src: Record<string, number> | undefined): void {
+  if (!target || !src) return
+  for (const [k, v] of Object.entries(src)) {
+    if (typeof v === 'number' && isFinite(v)) target[k] = v
+  }
+}
+
+export default function DebugHUD({ store, frontierViz, onToggleFrontierViz }: DebugHUDProps) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot) as EngineSnapshot
 
+  /* Préférences chargées une seule fois (synchronement) : disponibles dès le 1er rendu
+     pour initialiser open/solo/muted, et au montage pour repousser les valeurs dans ctx. */
+  const prefsRef = React.useRef<DebugPrefs>(loadPrefs())
+
   const [ctx, setCtx] = React.useState<any>(null)
-  const [field, setField] = React.useState<any>(null)
+  /* Génération de pluie : 2 flux Poisson (λ L1/L2) + zones (rL1/rMaxL2) + régime. */
+  const [rain, setRain] = React.useState<any>(null)
 
   React.useEffect(() => {
     const w = (window as any).__rompiche
     if (w?.ctx) {
+      const p = prefsRef.current
+      /* Repousser les valeurs sauvegardées dans ctx AVANT d'hydrater l'état React. */
+      applyNums(w.ctx.worldConfig?.rain, p.rain)
+      applyNums(w.ctx.worldConfig?.grain, p.grain)
+      applyNums(w.ctx.worldConfig?.timbre, p.timbre)
+      if (p.voices?.L1 != null) w.resizeVoices?.('L1', p.voices.L1)
+      if (p.voices?.L2 != null) w.resizeVoices?.('L2', p.voices.L2)
       setCtx(w.ctx)
-      if (w.ctx.worldConfig?.l1Field) setField({ ...w.ctx.worldConfig.l1Field })
+      if (w.ctx.worldConfig?.rain) setRain({ ...w.ctx.worldConfig.rain })
     }
   }, [])
 
-  const setParam = (key: string, val: number) => {
-    if (!ctx?.worldConfig?.l1Field) return
-    ctx.worldConfig.l1Field[key] = val
-    setField((f: any) => ({ ...f, [key]: val }))
+  const setRainParam = (key: string, val: number) => {
+    if (!ctx?.worldConfig?.rain) return
+    ctx.worldConfig.rain[key] = val
+    setRain((r: any) => ({ ...r, [key]: val }))
   }
+
+  /* Timbre de la pluie (durée/détune/attaque/cooldown) : ex-constantes, réglables live. */
+  const [grain, setGrain] = React.useState<any>(null)
+  React.useEffect(() => {
+    const w = (window as any).__rompiche
+    if (w?.ctx?.worldConfig?.grain) setGrain({ ...w.ctx.worldConfig.grain })
+  }, [])
+  const setGrainParam = (key: string, val: number) => {
+    if (!ctx?.worldConfig?.grain) return
+    ctx.worldConfig.grain[key] = val
+    setGrain((f: any) => ({ ...f, [key]: val }))
+  }
+
+  /* Timbre « flouté + pitché » des voix (interpolé L1↔L2 par mix) : réglable live. */
+  const [timbre, setTimbre] = React.useState<any>(null)
+  React.useEffect(() => {
+    const w = (window as any).__rompiche
+    if (w?.ctx?.worldConfig?.timbre) setTimbre({ ...w.ctx.worldConfig.timbre })
+  }, [])
+  const setTimbreParam = (key: string, val: number) => {
+    if (!ctx?.worldConfig?.timbre) return
+    ctx.worldConfig.timbre[key] = val
+    setTimbre((f: any) => ({ ...f, [key]: val }))
+  }
+
+  /* Budgets de voix par couche (réglables live) : recréent les entités voix à la volée
+     via __rompiche.resizeVoices. Permet d'équilibrer L1 (héros proches) / L2 (lointaines)
+     à l'oreille selon la frontière choisie. */
+  const [voicesL1, setVoicesL1] = React.useState<number>(0)
+  const [voicesL2, setVoicesL2] = React.useState<number>(0)
+  React.useEffect(() => {
+    const w = (window as any).__rompiche
+    if (w?.ctx?.worldConfig?.layers) {
+      setVoicesL1(w.ctx.worldConfig.layers.L1.voices ?? 0)
+      setVoicesL2(w.ctx.worldConfig.layers.L2.voicesMax ?? 0)
+    }
+  }, [])
+  const setVoiceBudget = (layer: 'L1' | 'L2', count: number) => {
+    const w = (window as any).__rompiche
+    w?.resizeVoices?.(layer, count)
+    if (layer === 'L1') setVoicesL1(count); else setVoicesL2(count)
+  }
+
+  /* Solo/mute par couche (cadrage 05 §Instrument) : l'UI ne fait que produire les 3 gains
+     ctx.layerGain ; le moteur les applique (3 chemins audio). Règle : un seul solo à la fois
+     (re-cliquer = annuler) ; mute indépendant par couche ; un solo masque les mutes des autres. */
+  type Layer = 'L1' | 'L2' | 'L3'
+  const [solo, setSolo] = React.useState<Layer | null>(() => prefsRef.current.solo ?? null)
+  const [muted, setMuted] = React.useState<Record<Layer, boolean>>(() => ({
+    L1: !!prefsRef.current.muted?.L1, L2: !!prefsRef.current.muted?.L2, L3: !!prefsRef.current.muted?.L3,
+  }))
+
+  const applyGains = (s: Layer | null, m: Record<Layer, boolean>) => {
+    if (!ctx?.layerGain) return
+    for (const L of ['L1', 'L2', 'L3'] as Layer[]) {
+      const audible = s ? L === s : !m[L]
+      ctx.layerGain[L] = audible ? 1 : 0
+    }
+  }
+  const toggleSolo = (L: Layer) => {
+    const next = solo === L ? null : L
+    setSolo(next); applyGains(next, muted)
+  }
+  const toggleMute = (L: Layer) => {
+    const next = { ...muted, [L]: !muted[L] }
+    setMuted(next); applyGains(solo, next)
+  }
+
+  /* Réappliquer les gains sauvegardés (solo/mute) dès que ctx est prêt. */
+  React.useEffect(() => {
+    if (ctx?.layerGain) applyGains(solo, muted)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctx])
+
+  /* État replié des sections (item 10). Par défaut : l'essentiel ouvert, les sliders fins repliés.
+     Fusionné avec les préférences sauvegardées (une section nouvelle garde son défaut). */
+  const [open, setOpen] = React.useState<Record<string, boolean>>(() => ({
+    tete: false, sortie: true, couches: true, pool: true, mat: true,
+    frontiere: false, timbre: false,
+    ...prefsRef.current.open,
+  }))
+  const toggle = (id: string) => setOpen((o) => ({ ...o, [id]: !o[id] }))
+
+  /* Persister les préférences à chaque changement (valeurs, repli, solo/mute, voix).
+     GARDE-FOU : ne PAS sauvegarder tant que l'hydratation initiale n'est pas finie.
+     Sinon le tout premier rendu (rain/grain/timbre = null, voices = 0) écrase
+     le localStorage AVANT que les effets d'hydratation aient peuplé les états → au
+     rechargement on relit des zéros (0 voix) et des champs absents. On n'arme la
+     sauvegarde qu'une fois ctx prêt ET tous les états réglables hydratés. */
+  const hydrated = !!ctx && rain != null && grain != null && timbre != null
+  React.useEffect(() => {
+    if (!hydrated) return
+    savePrefs({
+      open, solo, muted,
+      rain: rain ?? undefined,
+      grain: grain ?? undefined,
+      timbre: timbre ?? undefined,
+      voices: { L1: voicesL1, L2: voicesL2 },
+    })
+  }, [hydrated, open, solo, muted, rain, grain, timbre, voicesL1, voicesL2])
 
   const { master, pool, materials, faceLevels, layers } = snapshot
 
@@ -159,52 +413,53 @@ export default function DebugHUD({ store, fieldViz, onToggleFieldViz }: DebugHUD
       </div>
 
       <div className="dbg__body">
-        <section className="dbg__sec">
-          <div className="dbg__sech">Inputs · 6 faces de la tête</div>
-          <div className="dbg__faces">
-            {FACES.map(({ label }, i) => (
-              <div key={label} className="dbg__face">
-                <span className="dbg__flabel">{label}</span>
-                <div className="dbg__ftrack">
-                  <div className="dbg__ffill" style={{ width: dbToWidth(faceLevels[i]) + '%' }} />
-                </div>
-                <span className="dbg__fdb">{dbStr(faceLevels[i])}</span>
-              </div>
-            ))}
-          </div>
-        </section>
+        <Section id="sortie" title={`Sortie master (post-atténuation) · ${dbStr(master)}`}
+          open={open.sortie} onToggle={toggle} />
 
-        <section className="dbg__sec">
-          <div className="dbg__sech">Sortie master (post-atténuation) · {dbStr(master)}</div>
-        </section>
-
-        <section className="dbg__sec">
-          <div className="dbg__sech">Couches · niveaux réels</div>
+        <Section id="couches" title="Couches · niveaux réels · solo / mute"
+          open={open.couches} onToggle={toggle}>
           <div className="dbg__faces">
             {([
-              ['L1 héros', layers.L1.level],
-              ['L2 secteurs', layers.L2.level],
-              ['L3 nappe', layers.L3.level],
-            ] as const).map(([label, lvl]) => (
-              <div key={label} className="dbg__face">
-                <span className="dbg__flabel" style={{ width: 64, flexBasis: 64 }}>{label}</span>
-                <div className="dbg__ftrack">
-                  <div className="dbg__ffill" style={{ width: dbToWidth(lvl) + '%' }} />
+              ['L1', 'L1 héros', layers.L1.level],
+              ['L2', 'L2 secteurs', layers.L2.level],
+              ['L3', 'L3 nappe', layers.L3.level],
+            ] as const).map(([key, label, lvl]) => {
+              const audible = solo ? key === solo : !muted[key]
+              return (
+                <div key={key} className="dbg__face">
+                  <span className="dbg__flabel" style={{ width: 56, flexBasis: 56 }}>{label}</span>
+                  <div className="dbg__ftrack" style={{ opacity: audible ? 1 : 0.25 }}>
+                    <div className="dbg__ffill" style={{ width: dbToWidth(lvl) + '%' }} />
+                  </div>
+                  <span className="dbg__fdb" style={{ width: 40, opacity: audible ? 1 : 0.4 }}>{dbStr(lvl)}</span>
+                  <div className="dbg__lgctl">
+                    <button
+                      className={'dbg__lgbtn' + (solo === key ? ' solo' : '')}
+                      onClick={() => toggleSolo(key)} title="Solo (isole cette couche)"
+                    >S</button>
+                    <button
+                      className={'dbg__lgbtn' + (muted[key] ? ' mute' : '')}
+                      onClick={() => toggleMute(key)} title="Mute (coupe cette couche)"
+                    >M</button>
+                  </div>
                 </div>
-                <span className="dbg__fdb">{dbStr(lvl)}</span>
-              </div>
-            ))}
+              )
+            })}
           </div>
-        </section>
+        </Section>
 
-        <section className="dbg__sec">
-          <div className="dbg__sech">
-            Pool · {pool.busy}/{pool.size} voix · {pool.steals} vol{pool.steals > 1 ? 's' : ''}
-          </div>
-        </section>
+        <Section
+          id="pool"
+          title={`Pool · ${pool.busy}/${pool.size} voix · ${pool.steals} vol${pool.steals > 1 ? 's' : ''}`}
+          open={open.pool} onToggle={toggle}
+        >
+          <SliderRow k="voix L1" min={0} max={64} step={1} value={voicesL1}
+            onChange={(v) => setVoiceBudget('L1', v)} fmt={(v) => v.toFixed(0)} />
+          <SliderRow k="voix L2" min={0} max={64} step={1} value={voicesL2}
+            onChange={(v) => setVoiceBudget('L2', v)} fmt={(v) => v.toFixed(0)} />
+        </Section>
 
-        <section className="dbg__sec">
-          <div className="dbg__sech">Matériaux · pool de voix partagé</div>
+        <Section id="mat" title="Matériaux · pool de voix partagé" open={open.mat} onToggle={toggle}>
           <div className="dbg__zones">
             {materials.map((m) => (
               <div key={m.id} className="dbg__zone">
@@ -216,37 +471,86 @@ export default function DebugHUD({ store, fieldViz, onToggleFieldViz }: DebugHUD
               </div>
             ))}
           </div>
-        </section>
+        </Section>
 
-        {field && (
-          <section className="dbg__sec">
-            <div className="dbg__sech">Répartition L1 héros · sphère 3D</div>
-            <SliderRow k="débit /s" min={0} max={200} step={1} value={field.rate ?? 80}
-              onChange={(v) => setParam('rate', v)} fmt={(v) => v.toFixed(0)} />
-            <SliderRow k="cœur" min={0} max={15} step={0.5} value={field.core ?? 0}
-              onChange={(v) => setParam('core', v)} fmt={(v) => v.toFixed(1) + ' m'} />
-            <SliderRow k="σ rayon" min={0.5} max={30} step={0.5} value={field.sigma ?? 6}
-              onChange={(v) => setParam('sigma', v)} fmt={(v) => v.toFixed(1) + ' m'} />
-            <SliderRow k="p forme" min={0.5} max={6} step={0.1} value={field.p ?? 1}
-              onChange={(v) => setParam('p', v)} fmt={(v) => v.toFixed(1)} />
-            <SliderRow k="plancher" min={0} max={1} step={0.01} value={field.floor ?? 0}
-              onChange={(v) => setParam('floor', v)} fmt={(v) => v.toFixed(2)} />
-            <SliderRow k="vertical ky" min={0} max={1} step={0.01} value={field.ky ?? 0}
-              onChange={(v) => setParam('ky', v)} fmt={(v) => v.toFixed(2)} />
-            <SliderRow k="bias haut" min={-2} max={8} step={0.1} value={field.upBias ?? 0}
-              onChange={(v) => setParam('upBias', v)} fmt={(v) => v.toFixed(1) + ' m'} />
-            <FieldCurveField ctx={ctx} />
+        {rain && (
+          <Section id="frontiere" title="Pluie · 2 flux Poisson (L1 proche / L2 lointain) · zones"
+            open={open.frontiere} onToggle={toggle}>
+            <SliderRow k="λ L1 (gouttes/s)" min={0} max={200} step={1} value={rain.lambdaL1 ?? 40}
+              onChange={(v) => setRainParam('lambdaL1', v)} fmt={(v) => v.toFixed(0)} />
+            <SliderRow k="λ L2 (gouttes/s)" min={0} max={200} step={1} value={rain.lambdaL2 ?? 20}
+              onChange={(v) => setRainParam('lambdaL2', v)} fmt={(v) => v.toFixed(0)} />
+            <SliderRow k="rayon L1 (m)" min={0} max={30} step={0.5} value={rain.rL1 ?? 8}
+              onChange={(v) => setRainParam('rL1', v)} fmt={(v) => v.toFixed(1)} />
+            <SliderRow k="rayon max L2 (m)" min={0} max={40} step={0.5} value={rain.rMaxL2 ?? 20}
+              onChange={(v) => setRainParam('rMaxL2', v)} fmt={(v) => v.toFixed(1)} />
+            <SliderRow k="régime (×λ)" min={0} max={4} step={0.05} value={rain.regimeMult ?? 1}
+              onChange={(v) => setRainParam('regimeMult', v)} fmt={(v) => '×' + v.toFixed(2)} />
+            <RainZonesCurve rain={rain} timbre={timbre} />
             <div className="dbg__rec" style={{ marginTop: 8 }}>
               <button
-                className={'dbg__btn' + (fieldViz ? ' on' : '')}
-                onClick={onToggleFieldViz}
-                title="Coquilles iso-poids dans le viewport 3D"
+                className={'dbg__btn' + (frontierViz ? ' on' : '')}
+                onClick={onToggleFrontierViz}
+                title="Cercles de zones L1→L2 dans le viewport 3D"
               >
-                {fieldViz ? '◉ Sphère 3D' : '○ Sphère 3D'}
+                {frontierViz ? '◉ Zones 3D' : '○ Zones 3D'}
               </button>
             </div>
-          </section>
+
+            {/* Timbre des voix = le mix rendu en son : il glisse le long du MÊME axe
+                proche↔loin que la courbe ci-dessus. D'où l'imbrication sous le continuum
+                plutôt qu'une section séparée. Bornes L1 (proche) / L2 (loin) interpolées. */}
+            {timbre && (
+              <>
+                <div className="dbg__subh">Voix · flou + pitch (L1 ↔ L2)</div>
+                <SliderRow k="passe-bas L1 (Hz)" min={500} max={20000} step={100} value={timbre.lowpassHzL1 ?? 18000}
+                  onChange={(v) => setTimbreParam('lowpassHzL1', v)} fmt={(v) => (v / 1000).toFixed(1) + 'k'} />
+                <SliderRow k="passe-bas L2 (Hz)" min={500} max={20000} step={100} value={timbre.lowpassHzL2 ?? 3500}
+                  onChange={(v) => setTimbreParam('lowpassHzL2', v)} fmt={(v) => (v / 1000).toFixed(1) + 'k'} />
+                <SliderRow k="diffusion L1" min={0} max={1} step={0.01} value={timbre.diffusionL1 ?? 0}
+                  onChange={(v) => setTimbreParam('diffusionL1', v)} fmt={(v) => (v * 100).toFixed(0) + '%'} />
+                <SliderRow k="diffusion L2" min={0} max={1} step={0.01} value={timbre.diffusionL2 ?? 0.35}
+                  onChange={(v) => setTimbreParam('diffusionL2', v)} fmt={(v) => (v * 100).toFixed(0) + '%'} />
+                <SliderRow k="pitch L1 (demi-tons)" min={-12} max={12} step={0.5} value={timbre.pitchL1 ?? 0}
+                  onChange={(v) => setTimbreParam('pitchL1', v)} fmt={(v) => v.toFixed(1)} />
+                <SliderRow k="pitch L2 (demi-tons)" min={-12} max={12} step={0.5} value={timbre.pitchL2 ?? -3}
+                  onChange={(v) => setTimbreParam('pitchL2', v)} fmt={(v) => v.toFixed(1)} />
+                <SliderRow k="délai diffusion (ms)" min={0} max={500} step={5} value={(timbre.delayS ?? 0.08) * 1000}
+                  onChange={(v) => setTimbreParam('delayS', v / 1000)} fmt={(v) => v.toFixed(0)} />
+                <SliderRow k="retour diffusion" min={0} max={0.95} step={0.01} value={timbre.feedback ?? 0.35}
+                  onChange={(v) => setTimbreParam('feedback', v)} fmt={(v) => (v * 100).toFixed(0) + '%'} />
+              </>
+            )}
+          </Section>
         )}
+
+        {grain && (
+          <Section id="timbre" title="Grain · son d'une goutte"
+            open={open.timbre} onToggle={toggle}>
+            <SliderRow k="durée (ms)" min={20} max={1000} step={10} value={(grain.duréeS ?? 0.3) * 1000}
+              onChange={(v) => setGrainParam('duréeS', v / 1000)} fmt={(v) => v.toFixed(0)} />
+            <SliderRow k="détune ±" min={0} max={200} step={2} value={grain.detuneSpan ?? 40}
+              onChange={(v) => setGrainParam('detuneSpan', v)} fmt={(v) => (v / 2).toFixed(0) + ' c'} />
+            <SliderRow k="attaque (ms)" min={0.5} max={50} step={0.5} value={(grain.attaqueS ?? 0.004) * 1000}
+              onChange={(v) => setGrainParam('attaqueS', v / 1000)} fmt={(v) => v.toFixed(1)} />
+            <SliderRow k="cooldown (ms)" min={0} max={300} step={5} value={(grain.cooldownS ?? 0.08) * 1000}
+              onChange={(v) => setGrainParam('cooldownS', v / 1000)} fmt={(v) => v.toFixed(0)} />
+          </Section>
+        )}
+
+        <Section id="tete" title="Tête · 6 faces (inputs directionnels)" open={open.tete} onToggle={toggle}>
+          <div className="dbg__faces">
+            {FACES.map(({ label }, i) => (
+              <div key={label} className="dbg__face">
+                <span className="dbg__flabel">{label}</span>
+                <div className="dbg__ftrack">
+                  <div className="dbg__ffill" style={{ width: dbToWidth(faceLevels[i]) + '%' }} />
+                </div>
+                <span className="dbg__fdb">{dbStr(faceLevels[i])}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
       </div>
       <div className="dbg__foot">mesures audio réelles · AnalyserNode par voix</div>
     </aside>

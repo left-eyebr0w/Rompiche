@@ -14,6 +14,11 @@ export interface SpatialAudioBackend {
   setListener(pos: Vector3, forward: Vector3, up: Vector3): void
   /** Gain maître en dB (relatif au gain de base). Rampe pour éviter le clic. */
   setMasterGainDb(db: number): void
+  /** Bus de DIFFUSION partagé (réseau de délais à retour) pour le « flou » des voix.
+     Les grains y envoient un wet ∝ mix (cf. timbre, cadrage rework/06). null avant init. */
+  readonly diffusionInput: AudioNode | null
+  /** Règle le réseau de délais partagé : temps (s) et retour [0..1[. */
+  setDiffusion(delayS: number, feedback: number): void
   // occlusion (monde vivant) : filtre passe-bas sur le send
   // réverb   (monde vivant) : ConvolverNode partagé, IR ← enclosedVolume()
 }

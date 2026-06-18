@@ -62,9 +62,9 @@ export interface EngineContext {
   bands: LayerBoundaries
   /** Cooldown par cellule (clé = index de cellule → dernier temps logique d'impact, s). */
   cooldown: Map<number, number>
-  /** État d'intégration Poisson : flux unique (slot 'terre') depuis la
-     simplification J4 — un seul pool, plus de partition par matériau. */
-  poisson: { terre: PoissonState }
+  /** État d'intégration Poisson : DEUX flux indépendants (notes/random/pluie.txt) —
+     L1 (héros, disque proche) et L2 (lointain, anneau), chacun son débit λ. */
+  poisson: { L1: PoissonState; L2: PoissonState }
   /** Nombre d'échantillons par matériau (métadonnée d'assets). Source de vérité du
      tirage d'échantillon uniforme de rainPoisson. */
   sampleCounts: Record<MaterialId, number>
@@ -80,6 +80,11 @@ export interface EngineContext {
   headWorldPos: Vector3
   /** Gain pluie en dB, appliqué par AudioSync à chaque grain. */
   rainGainDb: number
+  /** Gain linéaire par couche (0..1, défaut 1), écrit par l'UI (solo/mute), lu par les
+     systèmes audio. L1 et L2 sont des voix HRTF (mêmes chemin de grain, distinguées par
+     voice.layer) ; L3 est la nappe diffuse. L'UI n'éteint rien elle-même — elle ne fait
+     qu'écrire ces gains (cf. cadrage 05 §Instrument). */
+  layerGain: { L1: number; L2: number; L3: number }
   /** Gain master en dB, appliqué par AudioSync au masterGain du backend. */
   masterGainDb: number
   input: InputChannels

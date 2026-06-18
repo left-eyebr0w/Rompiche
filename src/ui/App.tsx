@@ -51,7 +51,7 @@ export interface AppProps {
 
 export default function App({ ctx, world, renderer }: AppProps) {
   const [debug, setDebug] = React.useState(false)
-  const [fieldViz, setFieldViz] = React.useState(false)
+  const [frontierViz, setFrontierViz] = React.useState(false)
   const [listening, setListening] = React.useState(() => ctx.input.controls.listening)
   const [loadKey, setLoadKey] = React.useState(0)
   const viewportRef = React.useRef<HTMLDivElement>(null)
@@ -188,12 +188,12 @@ export default function App({ ctx, world, renderer }: AppProps) {
       {debug && (
         <DebugHUD
           store={store}
-          fieldViz={fieldViz}
-          onToggleFieldViz={() => {
-            const next = !fieldViz
-            setFieldViz(next)
+          frontierViz={frontierViz}
+          onToggleFrontierViz={() => {
+            const next = !frontierViz
+            setFrontierViz(next)
             const w = window as any
-            if (w.__rompiche) w.__rompiche.debug.fieldViz = next
+            if (w.__rompiche) w.__rompiche.debug.frontierViz = next
           }}
         />
       )}

@@ -1,4 +1,3 @@
-# Debug
 [ ] - Rajouter des visuels plus pratique pour le débug mon jeu de manière générale (brainstormer pour allonger/préciser la liste):
 [ ] - Overlay GUI pour les performances en debug (en toggle) (fps, actions, couts des différentes actions/choses,) : brainstormer
 [ ] - Pouvoir isoler les différentes couches en débug pour les tweak séparement (et faire des parties/sous-menu L1/L2/L3 avec des infos intéressantes et des paramètres pertinent pour tweak la qualité de la pluie à l'oreille, en temps-réel, in-game). (+ Mieux ranger le sous-menu L1 actuel)
@@ -17,5 +16,10 @@ Pour tester la spatialité et l'élévation, il faudrait placer des objects de d
 Ça permettrait de tester la physique de la pluie et le moteur de son (choix des impacts de pluie + spatialisation)
 
 [ ] - Repenser l'UI pour les saves : faire un vrai écran de demarrage, avec un vrai flux (désactivable pour faciliter le developpement)
+[ ] - Ajuster les sliders / Le méchanisme de déplacement 
+[ ] - Tout mieux parametriser : proba, valeurs hardcodées, tout
 
+[ ] - 
+[ ] - 
+[ ] - 
 [ ] - 

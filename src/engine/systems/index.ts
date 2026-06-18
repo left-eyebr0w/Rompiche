@@ -1,14 +1,12 @@
 /* ── Assemblage des systèmes de simulation (J2) ──────────────────────────────
-   Ordre EXPLICITE codé en dur (architecture.md §3.1) : génération → routage →
-   allocation de voix. On ROUTE avant d'allouer car la couche d'un impact décide
-   s'il mérite une voix héros (L1) ou part aux secteurs (L2/L3) — fidèle au v0 dont
-   `trigger` route les impacts lointains et RETOURNE avant `pool.play`. (Diffère de
-   l'ordre purement illustratif de §3.4.) */
+   Ordre EXPLICITE codé en dur (architecture.md §3.1) : génération → allocation de
+   voix. La couche d'un impact est désormais fixée À L'ÉMISSION par RainPoisson
+   (deux flux de Poisson L1/L2, cf. notes/random/pluie.txt) — plus d'étape de routage
+   zonal a posteriori. */
 
 import { headInputToWorld } from '../context/coords.js'
 import { createInputSystem, type InputSystemDeps } from './input.js'
 import { createRainPoissonSystem } from './rainPoisson.js'
-import { createLodRoutingSystem } from './lodRouting.js'
 import { createVoicePoolSystem } from './voicePool.js'
 import { createAudioSyncSystem } from './audioSync.js'
 import { createDiffuseBedSystem } from './diffuseBed.js'
@@ -16,6 +14,7 @@ import { createFaceProjectionSystem } from './faceProjection.js'
 import type { System } from '../loop/loop.js'
 import type { EngineContext } from '../context/EngineContext.js'
 import type { GameWorld } from '../ecs/world.js'
+import type { Entity } from '../ecs/Entity.js'
 import type { Banks } from '../../audio/banks.js'
 import type { DiffuseBed } from '../../audio/DiffuseBed.js'
 
@@ -24,7 +23,6 @@ export function createSimSystems(world: GameWorld, ctx: EngineContext, inputDeps
   return [
     createInputSystem(ctx, inputDeps ?? { world }),
     createRainPoissonSystem(world, ctx),
-    createLodRoutingSystem(),
     createVoicePoolSystem(world, ctx),
   ]
 }
@@ -63,22 +61,49 @@ export function setupSimWorld(world: GameWorld, ctx: EngineContext, density = 0.
   })
 
   world.add({ rainEmitter: { density, active: true } })
-  const n = ctx.worldConfig.layers.L1.voices
-  for (let i = 0; i < n; i++) {
-    world.add({
-      voice: {
-        id: i,
-        materialId: null,
-        sample: 0,
-        grain: 0,
-        gainDb: 0,
-        levelDb: -Infinity,
-        busy: false,
-        dist: 0,
-        pos: { x: 0, y: 0, z: 0 },
-        startedAt: 0,
-        duration: 0,
-      },
-    })
+
+  /* Pool L1 (héros, proche) puis pool L2 (prolongement lointain, budget séparé).
+     Les id restent uniques sur tout le pool (identité des démotions/onsets). */
+  resizeVoicePool(world, 'L1', ctx.worldConfig.layers.L1.voices)
+  resizeVoicePool(world, 'L2', ctx.worldConfig.layers.L2.voicesMax)
+}
+
+let _nextVoiceId = 0
+
+function mkVoice(id: number, layer: 'L1' | 'L2'): { voice: NonNullable<Entity['voice']> } {
+  return {
+    voice: {
+      id,
+      layer,
+      materialId: null,
+      sample: 0,
+      grain: 0,
+      mix: 0,
+      gainDb: 0,
+      levelDb: -Infinity,
+      busy: false,
+      dist: 0,
+      pos: { x: 0, y: 0, z: 0 },
+      startedAt: 0,
+      duration: 0,
+    },
+  }
+}
+
+/* Redimensionne le pool de voix d'UNE couche à `count` entités, à la volée. Les
+   entités voix sont créées paresseusement côté audio (audioSync crée la SpatialSource
+   au 1ᵉʳ tick où l'id apparaît), donc ajouter/retirer fonctionne en live sans recâbler
+   l'audio. Les ids restent globalement uniques (compteur monotone) pour ne pas
+   collisionner avec les démotions/onsets d'une voix retirée. Retirer les voix LIBRES
+   d'abord (jamais couper une voix qui sonne ; on retire les occupées en dernier). */
+export function resizeVoicePool(world: GameWorld, layer: 'L1' | 'L2', count: number): void {
+  const target = Math.max(0, Math.floor(count))
+  const current = [...world.with('voice')].filter(e => e.voice!.layer === layer)
+  if (current.length < target) {
+    for (let i = current.length; i < target; i++) world.add(mkVoice(_nextVoiceId++, layer))
+  } else if (current.length > target) {
+    /* Retirer les libres avant les occupées pour minimiser les coupures audibles. */
+    const removable = current.sort((a, b) => Number(a.voice!.busy) - Number(b.voice!.busy))
+    for (let i = 0; i < current.length - target; i++) world.remove(removable[i])
   }
 }

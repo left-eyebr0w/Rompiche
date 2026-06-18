@@ -25,8 +25,8 @@ function runSim(
 ): SimResult {
   const clock = new ManualClock()
   const ctx = createHeadlessContext({ seed, clock })
-  /* Débit du flux héros L1 (rainPoisson lit l1Field.rate × density). */
-  if (heroRate !== undefined) ctx.worldConfig.l1Field.rate = heroRate
+  /* Débit du flux héros L1 (rainPoisson lit rain.lambdaL1 × regime × density). */
+  if (heroRate !== undefined) ctx.worldConfig.rain.lambdaL1 = heroRate
 
   const world = createWorld()
   setupSimWorld(world, ctx, density)
@@ -48,7 +48,7 @@ function runSim(
 
 const countLayer = (r: SimResult, l: Layer) => r.impacts.filter(i => i.layer === l).length
 
-describe('simulation pure (RainPoisson → LodRouting → VoicePool)', () => {
+describe('simulation pure (RainPoisson 2 flux → VoicePool)', () => {
   it('produit des impacts', () => {
     const r = runSim(1, 120)
     expect(r.impacts.length).toBeGreaterThan(0)
@@ -66,10 +66,13 @@ describe('simulation pure (RainPoisson → LodRouting → VoicePool)', () => {
     expect(b.impacts).not.toEqual(a.impacts)
   })
 
-  it('route les impacts sur les 3 couches (L1 héros, L2/L3 lointains)', () => {
+  it('émet des impacts sur les 2 flux ponctuels (L1 proche, L2 lointain)', () => {
+    // Les impacts ne portent QUE L1/L2 (la couche est fixée par le flux émetteur) ;
+    // L3 est la nappe continue, pas un flux d'événements (notes/random/pluie.txt).
     const r = runSim(3, 400)
     expect(countLayer(r, 'L1')).toBeGreaterThan(0)
-    expect(countLayer(r, 'L2') + countLayer(r, 'L3')).toBeGreaterThan(0)
+    expect(countLayer(r, 'L2')).toBeGreaterThan(0)
+    expect(countLayer(r, 'L3')).toBe(0)
   })
 
   it('pousse un onset de grain par acquisition de voix L1 (canal AudioSync)', () => {
@@ -88,7 +91,7 @@ describe('simulation pure (RainPoisson → LodRouting → VoicePool)', () => {
   })
 
   it('au débit par défaut, le pool n’est PAS saturé (anti-mitraillette/anti-freeze)', () => {
-    // Régression du bug de sur-saturation : à density=1 (défaut l1Field.rate=60),
+    // Régression du bug de sur-saturation : à density=1 (défaut rain.lambdaL1=40),
     // le nombre de voix simultanément busy reste bien sous la capacité du pool.
     const clock = new ManualClock()
     const ctx = createHeadlessContext({ seed: 9, clock })

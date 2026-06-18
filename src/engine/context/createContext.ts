@@ -67,10 +67,11 @@ export function createHeadlessContext(opts: HeadlessOptions = {}): EngineContext
     time: { tick: 0, seconds: 0 },
     bands,
     cooldown: new Map<number, number>(),
-    /* Un seul flux Poisson (slot 'terre') depuis la simplification J4 : RainPoisson
-       tire sur un pool unique, plus de partition par matériau. */
+    /* Deux flux Poisson indépendants (notes/random/pluie.txt) : L1 (héros, disque
+       proche) et L2 (lointain, anneau), chacun son accumulateur/intervalle. */
     poisson: {
-      terre: { acc: 0, next: 0 },
+      L1: { acc: 0, next: 0 },
+      L2: { acc: 0, next: 0 },
     },
     sampleCounts: SAMPLE_COUNTS,
     frame: { impacts: [], demotions: [], grainOnsets: [] },
@@ -79,6 +80,7 @@ export function createHeadlessContext(opts: HeadlessOptions = {}): EngineContext
     headWorldPos: headInputToWorld(defaultControls().listener, coords),
     rainGainDb: 0,
     masterGainDb: 0,
+    layerGain: { L1: 1, L2: 1, L3: 1 },
     input: emptyInput(),
     // audio / render : absents en headless (optionnels, §2.1)
   }

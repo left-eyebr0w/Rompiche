@@ -8,6 +8,7 @@
    PAS de dépendance three.js : données pures, typées. */
 
 import type { Terrain } from './Terrain.js'
+import type { SkyOcclusion } from './skyOcclusion.js'
 import type { Coords, Vector3 } from '../context/coords.js'
 import type { MaterialId } from '../components/materials.js'
 
@@ -28,8 +29,12 @@ function cellKey(col: number, row: number, cols: number): number {
   return row * cols + col
 }
 
-/** Construit le mesh depuis le Terrain : un vertex par cellule fine. */
-export function buildTerrainMesh(terrain: Terrain, coords: Coords): TerrainMesh {
+/** Construit le mesh depuis le Terrain : un vertex par cellule fine. La normale du
+    terrain est toujours +Y, donc le filtre d'orientation est trivialement passé ;
+    seul l'OCCLUSION verticale décide de expoCiel (cadrage 07). `occlusion` unifie
+    le verdict avec les objets : une cellule est abritée par un relief plus haut OU
+    par une boîte posée au-dessus. Optionnel (rétro-compat → ciel ouvert partout). */
+export function buildTerrainMesh(terrain: Terrain, coords: Coords, occlusion?: SkyOcclusion): TerrainMesh {
   const { size, CELL, ground } = coords
   const half = size / 2
   const vertices: TerrainVertex[] = []
@@ -42,19 +47,8 @@ export function buildTerrainMesh(terrain: Terrain, coords: Coords): TerrainMesh 
       const cell = terrain.cellAt(cx, cz)
       if (!cell) continue
 
-      const hMonde = cell.height
-      const y = ground + hMonde
-
-      const myBlocks = hMonde / terrain.block
-      let abrité = false
-      const neighbors = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-      for (const [dc, dr] of neighbors) {
-        const nc = col + dc, nr = row + dr
-        const ncx = (nc + 0.5) * CELL - half
-        const ncz = (nr + 0.5) * CELL - half
-        const nc2 = terrain.cellAt(ncx, ncz)
-        if (nc2 && nc2.height / terrain.block >= myBlocks + 1) { abrité = true; break }
-      }
+      const y = ground + cell.height
+      const abrité = occlusion?.isSheltered(cx, y, cz) ?? false
 
       vertices.push({
         position: { x: cx, y, z: cz },
@@ -71,64 +65,53 @@ export function buildTerrainMesh(terrain: Terrain, coords: Coords): TerrainMesh 
   return { vertices }
 }
 
-/** Paramètres de la répartition spatiale (PDF sphérique 3D autour de la tête). */
-export interface SpatialField {
-  core: number
-  sigma: number
-  p: number
-  floor: number
-  ky: number
-  upBias: number
-}
-
-const DEFAULT_FIELD: SpatialField = { core: 0, sigma: 10, p: 2, floor: 0, ky: 0, upBias: 0 }
-
-/** Poids de tirage d'un point à la distance (paramétrée) de la tête :
-      w(d) = floor + (1 − floor) · exp( −0.5 · (max(0, d−core)/σ)^p ),  d² = dx² + dz² + (ky·dy)²
-    upBias décale le centre de la PDF vers le haut : le poids maximal est atteint
-    à head.y + upBias, ce qui concentre les gouttes au-dessus de l'auditeur. */
-export function spatialWeight(p: TerrainVertex, head: Vector3, f: SpatialField): number {
-  const dx = p.position.x - head.x
-  const dz = p.position.z - head.z
-  const headY = head.y + (f.upBias ?? 0)
-  const dy = (p.position.y - headY) * f.ky
-  const d = Math.sqrt(dx * dx + dz * dz + dy * dy)
-  const sigma = f.sigma > 1e-6 ? f.sigma : 1e-6
-  const dOut = d > f.core ? d - f.core : 0
-  const shaped = Math.exp(-0.5 * Math.pow(dOut / sigma, f.p))
-  return f.floor + (1 - f.floor) * shaped
-}
-
-/** Sélection pondérée d'un point d'impact depuis le pool unique.
-    Pondère par proximité à la tête (PDF paramétrée, cf. SpatialField).
-    Retourne null si le pool est vide. */
-export function pickImpact(
-  pool: TerrainVertex[],
-  prng: Prng,
-  head: Vector3 | null,
-  field: SpatialField = DEFAULT_FIELD,
-): TerrainVertex | null {
+/** Tirage UNIFORME d'un point dans un pool déjà filtré. Chaque point a la même
+    probabilité (les surfaces du diorama sont réparties uniformément en 2D, cf.
+    notes/random/pluie.txt → tirer un point ≈ tirer une position). Retourne null
+    si le pool est vide. */
+export function pickImpact(pool: readonly TerrainVertex[], prng: Prng): TerrainVertex | null {
   if (!pool.length) return null
+  const i = Math.min(pool.length - 1, Math.floor(prng.aléa() * pool.length))
+  return pool[i]
+}
 
-  if (!head) {
-    const total = pool.reduce((s, p) => s + (p.expoCiel || 0.01), 0)
-    let threshold = prng.aléa() * total
-    for (const p of pool) {
-      threshold -= (p.expoCiel || 0.01)
-      if (threshold <= 0) return p
+/** Buckets de points pré-triés par ZONE géométrique (notes/random/pluie.txt §Placement).
+    Partitionne les vertex exposés au ciel en deux pools disjoints selon la distance
+    HORIZONTALE d = √(dx²+dz²) à la tête :
+      • L1 : disque  d ∈ [0, rL1]
+      • L2 : anneau  d ∈ [rL1, rMaxL2]
+    Le re-tri n'a lieu QUE si la tête a bougé de plus de `epsMove` (m) depuis le dernier,
+    ou si les rayons changent → tirage O(1) au tick, pas de raycast, coût amorti. */
+export class RainBuckets {
+  readonly L1: TerrainVertex[] = []
+  readonly L2: TerrainVertex[] = []
+  private lastX = NaN
+  private lastZ = NaN
+  private lastR1 = NaN
+  private lastR2 = NaN
+
+  /** Vertex source (les exposés au ciel ; les abrités sont ignorés au tri). */
+  constructor(private readonly vertices: readonly TerrainVertex[], private readonly epsMove = 0.5) {}
+
+  /** Re-trie si la tête a bougé > epsMove ou si rL1/rMaxL2 ont changé. */
+  update(head: Vector3, rL1: number, rMaxL2: number): void {
+    const moved = Math.hypot(head.x - this.lastX, head.z - this.lastZ)
+    if (moved <= this.epsMove && rL1 === this.lastR1 && rMaxL2 === this.lastR2) return
+    this.lastX = head.x; this.lastZ = head.z
+    this.lastR1 = rL1; this.lastR2 = rMaxL2
+
+    this.L1.length = 0
+    this.L2.length = 0
+    const r1sq = rL1 * rL1
+    const r2sq = rMaxL2 * rMaxL2
+    for (let i = 0; i < this.vertices.length; i++) {
+      const v = this.vertices[i]
+      if (v.expoCiel <= 0) continue   // abrité (sous un surplomb) → pas de goutte
+      const dx = v.position.x - head.x
+      const dz = v.position.z - head.z
+      const dsq = dx * dx + dz * dz
+      if (dsq <= r1sq) this.L1.push(v)
+      else if (dsq <= r2sq) this.L2.push(v)
     }
-    return pool[pool.length - 1]
   }
-
-  const total = pool.reduce(
-    (s, p) => s + (p.expoCiel || 0.01) * spatialWeight(p, head, field), 0,
-  )
-  if (total <= 0) return null
-
-  let threshold = prng.aléa() * total
-  for (const p of pool) {
-    threshold -= (p.expoCiel || 0.01) * spatialWeight(p, head, field)
-    if (threshold <= 0) return p
-  }
-  return pool[pool.length - 1]
 }

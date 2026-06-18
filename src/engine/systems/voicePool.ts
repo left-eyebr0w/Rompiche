@@ -14,9 +14,7 @@ import type { EngineContext } from '../context/EngineContext.js'
 import type { GameWorld } from '../ecs/world.js'
 import type { Voice } from '../ecs/Entity.js'
 import type { Vector3 } from '../context/coords.js'
-
-/* Durée nominale d'un grain (s) — placeholder jusqu'à la vraie durée PCM (J3). */
-const GRAIN_DURATION_S = 0.3
+import type { Impact } from '../loop/frame.js'
 
 /* Attention : 1 si la voix est dans le champ avant de la tête, 0.4 sinon (v0 T-4.7).
    LISTENER_FORWARD = (0,0,−1) → demi-espace avant z<0 côté auditeur. */
@@ -53,27 +51,9 @@ export function createVoicePoolSystem(world: GameWorld, ctx: EngineContext): Sys
       }
     }
 
-    /* 2) Une voix par impact L1 : voix libre, sinon vol de la plus basse priorité. */
-    for (const imp of c.frame.impacts) {
-      if (imp.layer !== 'L1') continue
-      if (!materialById(imp.surface)) continue
-
-      let target: Voice | null = null
-      let lowest: Voice | null = null
-      let bestP = Infinity
-      for (const e of pool) {
-        const v = e.voice!
-        if (!v.busy) { target = v; break }
-        const p = priority(v, head, now)
-        if (p < bestP) { bestP = p; lowest = v }
-      }
-
-      let stolen = false
-      if (!target) { target = lowest; stolen = true }
-      if (!target) continue // pool vide (aucune entité voice)
-
+    /* Acquiert `target` pour l'impact, pousse démotion (si vol) + onset. Partagé L1/L2. */
+    function assign(target: Voice, imp: Impact, stolen: boolean): void {
       if (stolen) c.frame.demotions.push({ voice: target.id })
-
       const dx = imp.pos.x - head.x
       const dy = imp.pos.y - head.y
       const dz = imp.pos.z - head.z
@@ -81,16 +61,40 @@ export function createVoicePoolSystem(world: GameWorld, ctx: EngineContext): Sys
       target.materialId = imp.surface
       target.sample = imp.sample
       target.grain = imp.detune
+      target.mix = imp.mix ?? (imp.layer === 'L2' ? 1 : 0)
       target.gainDb = 0
       target.dist = Math.hypot(dx, dy, dz)
       target.pos = { x: imp.pos.x, y: imp.pos.y, z: imp.pos.z }
       target.startedAt = now
-      target.duration = GRAIN_DURATION_S
-
-      /* Onset : la voix vient d'être (ré)acquise → l'AudioSync joue un nouveau grain.
-         Sur un vol, la démotion (cut) ET l'onset (start) pointent la même voix :
-         l'AudioSync traite les démotions AVANT les onsets → coupe puis redémarre. */
+      target.duration = c.worldConfig.grain.duréeS
       c.frame.grainOnsets.push({ voice: target.id, offset: imp.offset })
+    }
+
+    /* 2) Une voix par impact, allouée dans le pool de SA couche (budgets L1/L2
+       séparés). Voix libre de la couche, sinon vol de la plus basse priorité PARMI
+       les voix de cette couche (les proches/fortes gagnent). L1 = héros proches,
+       L2 = voix lointaines (plus de rabattement en grain : « juste les voix »). */
+    function allocate(imp: Impact, layer: 'L1' | 'L2'): void {
+      if (!materialById(imp.surface)) return
+      let target: Voice | null = null
+      let lowest: Voice | null = null
+      let bestP = Infinity
+      for (const e of pool) {
+        const v = e.voice!
+        if (v.layer !== layer) continue
+        if (!v.busy) { target = v; break }
+        const p = priority(v, head, now)
+        if (p < bestP) { bestP = p; lowest = v }
+      }
+      let stolen = false
+      if (!target) { target = lowest; stolen = true }
+      if (!target) return // pool de la couche vide (aucune entité voice)
+      assign(target, imp, stolen)
+    }
+
+    for (const imp of c.frame.impacts) {
+      if (imp.layer === 'L1') allocate(imp, 'L1')
+      else if (imp.layer === 'L2') allocate(imp, 'L2')
     }
   }
 }

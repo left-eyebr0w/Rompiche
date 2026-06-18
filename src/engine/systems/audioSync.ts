@@ -125,9 +125,18 @@ export function createAudioSyncSystem(
         grains.delete(o.voice)
       }
 
+      /* Timbre interpolé L1↔L2 selon mix ∈ [0,1] (cadrage rework/06). lerp des params
+         de couche ; pitch en demi-tons → cents, ajouté au détune aléatoire du grain. */
+      const tb = ctx.worldConfig.timbre
+      const mix = Math.min(1, Math.max(0, voice.mix ?? 0))
+      const lerp = (a: number, b: number) => a + (b - a) * mix
+      const lowpassHz = lerp(tb.lowpassHzL1, tb.lowpassHzL2)
+      const pitchCents = lerp(tb.pitchL1, tb.pitchL2) * 100
+      const wet = lerp(tb.diffusionL1, tb.diffusionL2)
+
       const grainSrc = audioCtx.createBufferSource()
       grainSrc.buffer = buf
-      grainSrc.detune.value = voice.grain
+      grainSrc.detune.value = voice.grain + pitchCents
 
       /* Étalement sous-tick : jouer le grain à son instant Poisson dans la fenêtre
          du tick, pas à l'instant du tick. Sans ça, toutes les gouttes d'un tick
@@ -139,12 +148,28 @@ export function createAudioSyncSystem(
          instantanément produit un clic. Multiplié par des dizaines de gouttes/s,
          c'est la saccade perçue.
          Le palier tient compte du rainGainDb (défaut 0 dB = gain 1). */
-      const rainLin = Math.pow(10, (ctx.rainGainDb ?? 0) / 20)
+      /* Gain de couche (solo/mute, cf. cadrage 05 §Instrument) : L1 et voix L2 passent
+         par ce palier de grain. Les voix L2 portent layer==='L2', sinon L1 (héros). */
+      const layerLin = ctx.layerGain?.[voice.layer === 'L2' ? 'L2' : 'L1'] ?? 1
+      const rainLin = Math.pow(10, (ctx.rainGainDb ?? 0) / 20) * layerLin
       grainGain.gain.setValueAtTime(0, at)
-      grainGain.gain.linearRampToValueAtTime(rainLin, at + 0.004)
+      grainGain.gain.linearRampToValueAtTime(rainLin, at + (ctx.worldConfig.grain.attaqueS ?? 0.004))
+
+      /* Flou = passe-bas par grain (coupe interpolée selon mix) inséré avant le gain. */
+      const lp = audioCtx.createBiquadFilter()
+      lp.type = 'lowpass'
+      lp.frequency.value = lowpassHz
 
       const an = analysers.get(o.voice)
-      grainSrc.connect(grainGain).connect(an ?? src.input)
+      grainSrc.connect(lp).connect(grainGain).connect(an ?? src.input)
+
+      /* Diffusion (halo) : send wet ∝ mix vers le bus de délais partagé du backend. */
+      if (wet > 0 && backend.diffusionInput) {
+        const sendGain = audioCtx.createGain()
+        sendGain.gain.value = rainLin * wet
+        grainGain.connect(sendGain).connect(backend.diffusionInput)
+      }
+
       grainSrc.start(at)
 
       const vid = o.voice
@@ -174,5 +199,8 @@ export function createAudioSyncSystem(
 
     /* 6) Appliquer le gain master (relatif au gain de base du backend). */
     backend.setMasterGainDb(ctx.masterGainDb ?? 0)
+
+    /* 7) Réseau de délais de diffusion (réglable live via le HUD). */
+    backend.setDiffusion(ctx.worldConfig.timbre.delayS, ctx.worldConfig.timbre.feedback)
   }
 }

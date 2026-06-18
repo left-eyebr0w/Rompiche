@@ -33,11 +33,18 @@ export interface RainEmitter {
 export interface Voice {
   /** Index stable dans le pool (= identité pour les démotions). */
   id: number
+  /** Couche de la voix : 'L1' (héros, proche) ou 'L2' (prolongement lointain, budget
+     séparé). Détermine quel pool/budget alloue cette voix. Défaut 'L1'. */
+  layer?: 'L1' | 'L2'
   materialId: MaterialId | null
   /** Référence d'échantillon (indice de banque) du grain en cours. */
   sample: number
   /** Désaccord du grain (cents/ratio). */
   grain: number
+  /** Position de timbre L1→L2 ∈ [0,1] (0 = timbre L1 pur, 1 = timbre L2 pur),
+     héritée de l'impact (RainPoissonSystem, dérivée de la distance). Pilote
+     l'interpolation flou/pitch (audioSync). */
+  mix: number
   /** Gain COMMANDÉ (dB) — sert à la priorité de vol de voix (0 pour les héros). */
   gainDb: number
   /** Niveau MESURÉ (dB) du grain en cours, via AnalyserNode par voix (audioSync).

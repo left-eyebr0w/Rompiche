@@ -18,7 +18,16 @@
 
 import type { TerrainVertex } from './terrainMesh.js'
 import type { WorldObject } from './objects.js'
+import type { SkyOcclusion } from './skyOcclusion.js'
 import type { Coords, Vector3 } from '../context/coords.js'
+
+/* Filtrage des FACES CACHÉES (cadrage 07) — un vertex n'entre dans le pool que si
+   sa NORMALE pointe assez vers le haut ET que rien ne le surplombe (SkyOcclusion).
+
+   Seuil d'orientation : une face reçoit la pluie ssi sa normale pointe assez vers
+   le haut. 0,5 ≈ 60° d'inclinaison max ; les flancs verticaux (n·Y = 0) sont
+   écartés, le dessus (+Y, n·Y = 1) passe. Réglage de calibration. */
+export const UP_THRESHOLD = 0.5
 
 /* Les 5 faces utiles d'une boîte (le DESSOUS, −Y, ne reçoit pas la pluie → ignoré).
    Chaque face : sa normale monde + les deux axes locaux qui la balaient (u, v). */
@@ -55,8 +64,16 @@ function sampleCenters(len: number, step: number): number[] {
   return out
 }
 
-/** Échantillonne les faces exposées au ciel d'un objet boîte en TerrainVertex. */
-export function buildObjectVertices(obj: WorldObject, coords: Coords): TerrainVertex[] {
+/** Échantillonne les faces d'un objet boîte en TerrainVertex, en écartant les
+    faces cachées (cadrage 07) :
+      • filtre de NORMALE : seules les faces tournées assez vers le haut (n·Y ≥
+        UP_THRESHOLD) reçoivent la pluie verticale → les 4 flancs et le dessous
+        sont sautés ;
+      • filtre d'OCCLUSION : chaque point gardé est marqué abrité (expoCiel = 0)
+        si quelque chose le surplombe (terrain plus haut, autre boîte au-dessus).
+    `occlusion` est optionnel pour rester rétro-compatible (objet isolé → ciel
+    ouvert), mais World.ts le fournit toujours en pratique. */
+export function buildObjectVertices(obj: WorldObject, coords: Coords, occlusion?: SkyOcclusion): TerrainVertex[] {
   const step = coords.CELL
   const [w, h, d] = obj.size
   const half: [number, number, number] = [w / 2, h / 2, d / 2]
@@ -64,19 +81,21 @@ export function buildObjectVertices(obj: WorldObject, coords: Coords): TerrainVe
   const out: TerrainVertex[] = []
 
   for (const f of FACES) {
+    /* Filtre de normale : on ne garde que les faces tournées vers le haut. */
+    if (f.normale.y < UP_THRESHOLD) continue
+
     const us = sampleCenters(obj.size[f.uExt], step)
     const vs = sampleCenters(obj.size[f.vExt], step)
     for (const u of us) {
       for (const v of vs) {
+        const px = cx + f.normale.x * half[0] + f.uAxis.x * u + f.vAxis.x * v
+        const py = cy + f.normale.y * half[1] + f.uAxis.y * u + f.vAxis.y * v
+        const pz = cz + f.normale.z * half[2] + f.uAxis.z * u + f.vAxis.z * v
         out.push({
-          position: {
-            x: cx + f.normale.x * half[0] + f.uAxis.x * u + f.vAxis.x * v,
-            y: cy + f.normale.y * half[1] + f.uAxis.y * u + f.vAxis.y * v,
-            z: cz + f.normale.z * half[2] + f.uAxis.z * u + f.vAxis.z * v,
-          },
+          position: { x: px, y: py, z: pz },
           normale: f.normale,
           matériau: obj.materialId,
-          expoCiel: 1,
+          expoCiel: occlusion?.isSheltered(px, py, pz) ? 0 : 1,
         })
       }
     }

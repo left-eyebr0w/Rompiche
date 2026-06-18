@@ -1,0 +1,52 @@
+# Fiche de contexte — Système de pluie procédurale (audio spatialisé)
+
+## Projet
+**Rompiche** : jeu *creative sandbox* relaxant, axé sur la création de dioramas naturels vivants. Le son est un pilier central : paysages sonores riches et réalistes (eau, pluie, faune, vent). Cible mobile, expérience fluide.
+
+## Objet de la discussion
+Conception du **système de génération des gouttes de pluie audio**. Le sujet porte uniquement sur le **placement et le déclenchement des événements sonores ponctuels**, pas sur le rendu visuel ni sur la simulation physique de l'eau.
+
+## Architecture des couches sonores
+La pluie est composée de **3 couches** :
+- **L1** — Gouttes "héros" : voix spatialisées proches.
+- **L2** — Gouttes lointaines : voix spatialisées, diffuses et pitchées (gain/pitch modulés par la distance).
+- **L3** — Bruit diffus continu (lit de fond). **Hors scope de la discussion** : L3 n'est pas un flux d'événements, c'est un fond continu.
+
+→ La discussion concerne **uniquement L1 et L2** (événements ponctuels).
+
+## Surfaces de réception des gouttes
+- Les surfaces du diorama exposent un **mesh de points** sur lesquels les gouttes peuvent "tomber" (point = position d'émission d'une voix).
+- Ces points sont répartis **uniformément en 2D** (densité par m² constante). Conséquence : tirer un point au hasard ≈ tirer une position au hasard ; pas de biais de densité à corriger.
+
+## Contraintes de performance
+- **Pool de voices déjà en place et efficace.**
+- **Plafond dur de voices : 2 par couche** (2 pour L1, 2 pour L2) → maximum 4 gouttes ponctuelles simultanées.
+- Cible mobile : éviter les coûts par frame, éviter le raycast au moment du tir.
+
+## Design retenu jusqu'ici
+1. **Taux d'apparition** : un **processus de Poisson par couche** (L1 et L2 indépendants).
+   - Délai avant prochaine goutte : `-ln(random01) / lambda`.
+   - `lambda_L1`, `lambda_L2` = gouttes/seconde. Framerate-independent.
+2. **Zones géométriques** (distance horizontale au joueur) :
+   - **L1** : cylindre proche, rayon ~2 m.
+   - **L2** : anneau de ~2 m à R_max ("pas trop loin").
+3. **Placement** : points pré-triés en **buckets par zone** (L1 / L2), re-triés seulement quand le joueur bouge significativement. Tirage uniforme dans le bucket → O(1), pas de raycast au tir.
+4. **Gestion de l'éloignement de L2** : ne PAS filtrer géométriquement les gouttes lointaines. Garder R_max large, mais **moduler gain + pitch par la distance**. Les gouttes très lointaines se fondent perceptivement dans L3 → transition continue L2→L3.
+
+## Régimes d'intensité
+- **Pour l'instant : un seul régime** de pluie.
+- **À terme : plusieurs régimes** (bruine → averse). Levier prévu : un **multiplicateur sur les lambdas** uniquement, sans toucher au reste du système.
+
+## Leviers de réglage
+| Objectif | Paramètre |
+|---|---|
+| Densité globale de pluie | `lambda_L1`, `lambda_L2` |
+| Proximité ressentie | rayon du cylindre L1 |
+| Étendue de la pluie | R_max + courbe gain/distance L2 |
+| Régimes (futur) | multiplicateur sur les lambdas |
+| Charge audio (déjà bornée) | cap de 2 voices / couche |
+
+## Points ouverts / à approfondir
+- Interaction entre le **cap dur de 2 voices/couche** et le processus de Poisson : politique de gestion quand un event se déclenche alors que les 2 voices sont déjà occupées (drop ? steal de la plus ancienne / plus lointaine ? file d'attente ?).
+- Calibrage concret des lambdas et de R_max pour le régime unique actuel.
+- Définition de la courbe gain/pitch en fonction de la distance pour L2.
