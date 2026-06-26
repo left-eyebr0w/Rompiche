@@ -380,10 +380,23 @@ export default function DebugHUD({ store, frontierViz, onToggleFrontierViz }: De
      Fusionné avec les préférences sauvegardées (une section nouvelle garde son défaut). */
   const [open, setOpen] = React.useState<Record<string, boolean>>(() => ({
     tete: false, sortie: true, couches: true, pool: true, mat: true,
-    frontiere: false, timbre: false,
+    frontiere: false, timbre: false, edition: false,
     ...prefsRef.current.open,
   }))
   const toggle = (id: string) => setOpen((o) => ({ ...o, [id]: !o[id] }))
+
+  /* Édition du terrain (debug-grade, cadrage 07) : peint un disque du matériau choisi
+     centré sur la position MONDE courante de la tête (lue dans ctx live). Le moteur
+     applique + rebake le pool tout seul (EditSystem) → le son suit au tick suivant. */
+  const [editRadius, setEditRadius] = React.useState(4)
+  const paintUnderHead = (mat: string) => {
+    const head = ctx?.headWorldPos
+    if (!head) return
+    store.pushCommand({
+      t: 'edit',
+      brush: { shape: { kind: 'disc', center: { x: head.x, y: head.y, z: head.z }, radius: editRadius }, op: { t: 'paint', mat: mat as any } },
+    })
+  }
 
   /* Persister les préférences à chaque changement (valeurs, repli, solo/mute, voix).
      GARDE-FOU : ne PAS sauvegarder tant que l'hydratation initiale n'est pas finie.
@@ -537,6 +550,18 @@ export default function DebugHUD({ store, frontierViz, onToggleFrontierViz }: De
               onChange={(v) => setGrainParam('cooldownS', v / 1000)} fmt={(v) => v.toFixed(0)} />
           </Section>
         )}
+
+        <Section id="edition" title="Édition terrain · peindre sous l'auditeur (debug)"
+          open={open.edition} onToggle={toggle}>
+          <SliderRow k="rayon (m)" min={0.5} max={10} step={0.5} value={editRadius}
+            onChange={setEditRadius} fmt={(v) => v.toFixed(1)} />
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+            {['terre', 'metal', 'bache'].map((m) => (
+              <button key={m} className="dbg__btn" onClick={() => paintUnderHead(m)}
+                title={`Peindre un disque de ${m} sous l'auditeur`}>{m}</button>
+            ))}
+          </div>
+        </Section>
 
         <Section id="tete" title="Tête · 6 faces (inputs directionnels)" open={open.tete} onToggle={toggle}>
           <div className="dbg__faces">

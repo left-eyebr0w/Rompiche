@@ -46,8 +46,10 @@ export function createRainPoissonSystem(world: GameWorld, ctx: EngineContext): S
     const now = c.time.seconds
     const cooldownS = c.worldConfig.grain.cooldownS
 
-    /* Re-trier les buckets si la tête a bougé / les rayons ont changé (amorti). */
-    buckets.update(head, rL1, rMaxL2)
+    /* Re-trier les buckets si la tête a bougé / les rayons ont changé / le pool a été
+       rebaké par une édition (meshVersion, cadrage 07 §5). Le mesh est patché EN PLACE
+       (même référence de tableau) → seul le re-tri doit être forcé. */
+    buckets.update(head, rL1, rMaxL2, c.world.meshVersion)
 
     /* Émet un flux Poisson de couche `layer` depuis `pool`, débit `rateMs` (gouttes/ms).
        Étale les onsets dans la fenêtre [0, dtMs] (instant Poisson de chaque goutte). */

@@ -21,12 +21,32 @@ export interface TerrainVertex {
 
 export interface TerrainMesh {
   vertices: TerrainVertex[]
+  /** Index cellule (row*cols+col) → position du vertex dans `vertices`. Permet le
+      rebake INCRÉMENTAL d'une cellule éditée (cadrage 07 §5). */
+  cellSlot: Map<number, number>
 }
 
 interface Prng { aléa(): number }
 
-function cellKey(col: number, row: number, cols: number): number {
-  return row * cols + col
+/** Construit le vertex d'UNE cellule fine (col,row). Source unique partagée entre le
+    bake complet et le rebake incrémental (cadrage 07) : même position/normale/matériau/
+    occlusion → pas de divergence possible entre les deux chemins. */
+export function buildCellVertex(
+  terrain: Terrain, coords: Coords, col: number, row: number, occlusion?: SkyOcclusion,
+): TerrainVertex {
+  const { size, CELL, ground } = coords
+  const half = size / 2
+  const cx = (col + 0.5) * CELL - half
+  const cz = (row + 0.5) * CELL - half
+  const cell = terrain.cellAt(cx, cz)!
+  const y = ground + cell.height
+  const abrité = occlusion?.isSheltered(cx, y, cz) ?? false
+  return {
+    position: { x: cx, y, z: cz },
+    normale: { x: 0, y: 1, z: 0 },
+    matériau: cell.material.id,
+    expoCiel: abrité ? 0 : 1,
+  }
 }
 
 /** Construit le mesh depuis le Terrain : un vertex par cellule fine. La normale du
@@ -35,34 +55,20 @@ function cellKey(col: number, row: number, cols: number): number {
     le verdict avec les objets : une cellule est abritée par un relief plus haut OU
     par une boîte posée au-dessus. Optionnel (rétro-compat → ciel ouvert partout). */
 export function buildTerrainMesh(terrain: Terrain, coords: Coords, occlusion?: SkyOcclusion): TerrainMesh {
-  const { size, CELL, ground } = coords
-  const half = size / 2
   const vertices: TerrainVertex[] = []
-  const index = new Map<number, number[]>()
+  const cellSlot = new Map<number, number>()
 
   for (let row = 0; row < terrain.rows; row++) {
     for (let col = 0; col < terrain.cols; col++) {
-      const cx = (col + 0.5) * CELL - half
-      const cz = (row + 0.5) * CELL - half
-      const cell = terrain.cellAt(cx, cz)
-      if (!cell) continue
-
-      const y = ground + cell.height
-      const abrité = occlusion?.isSheltered(cx, y, cz) ?? false
-
-      vertices.push({
-        position: { x: cx, y, z: cz },
-        normale: { x: 0, y: 1, z: 0 },
-        matériau: cell.material.id,
-        expoCiel: abrité ? 0 : 1,
-      })
-      const key = cellKey(col, row, terrain.cols)
-      if (!index.has(key)) index.set(key, [])
-      index.get(key)!.push(vertices.length - 1)
+      const cx = (col + 0.5) * coords.CELL - coords.size / 2
+      const cz = (row + 0.5) * coords.CELL - coords.size / 2
+      if (!terrain.cellAt(cx, cz)) continue
+      vertices.push(buildCellVertex(terrain, coords, col, row, occlusion))
+      cellSlot.set(row * terrain.cols + col, vertices.length - 1)
     }
   }
 
-  return { vertices }
+  return { vertices, cellSlot }
 }
 
 /** Tirage UNIFORME d'un point dans un pool déjà filtré. Chaque point a la même
@@ -89,16 +95,20 @@ export class RainBuckets {
   private lastZ = NaN
   private lastR1 = NaN
   private lastR2 = NaN
+  private lastVersion = -1
 
   /** Vertex source (les exposés au ciel ; les abrités sont ignorés au tri). */
   constructor(private readonly vertices: readonly TerrainVertex[], private readonly epsMove = 0.5) {}
 
-  /** Re-trie si la tête a bougé > epsMove ou si rL1/rMaxL2 ont changé. */
-  update(head: Vector3, rL1: number, rMaxL2: number): void {
+  /** Re-trie si la tête a bougé > epsMove, si rL1/rMaxL2 ont changé, OU si le pool a
+      été rebaké (meshVersion). Le dernier cas est le couplage caché de l'édition
+      (cadrage 07 §5) : sans lui, un edit serait inaudible tant que la tête ne bouge pas. */
+  update(head: Vector3, rL1: number, rMaxL2: number, meshVersion = 0): void {
     const moved = Math.hypot(head.x - this.lastX, head.z - this.lastZ)
-    if (moved <= this.epsMove && rL1 === this.lastR1 && rMaxL2 === this.lastR2) return
+    if (moved <= this.epsMove && rL1 === this.lastR1 && rMaxL2 === this.lastR2 && meshVersion === this.lastVersion) return
     this.lastX = head.x; this.lastZ = head.z
     this.lastR1 = rL1; this.lastR2 = rMaxL2
+    this.lastVersion = meshVersion
 
     this.L1.length = 0
     this.L2.length = 0

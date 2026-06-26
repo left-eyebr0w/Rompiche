@@ -6,6 +6,7 @@
 
 import { headInputToWorld } from '../context/coords.js'
 import { createInputSystem, type InputSystemDeps } from './input.js'
+import { createEditSystem } from './edit.js'
 import { createRainPoissonSystem } from './rainPoisson.js'
 import { createVoicePoolSystem } from './voicePool.js'
 import { createAudioSyncSystem } from './audioSync.js'
@@ -22,6 +23,10 @@ import type { DiffuseBed } from '../../audio/DiffuseBed.js'
 export function createSimSystems(world: GameWorld, ctx: EngineContext, inputDeps?: InputSystemDeps): System[] {
   return [
     createInputSystem(ctx, inputDeps ?? { world }),
+    /* Édition du terrain : applique les brushes + rebake le pool d'impacts. Tourne
+       APRÈS Input (qui laisse les commandes `edit`) et AVANT RainPoisson (qui consomme
+       le pool à jour ce même tick). Cf. cadrage rework/07. */
+    createEditSystem(ctx),
     createRainPoissonSystem(world, ctx),
     createVoicePoolSystem(world, ctx),
   ]

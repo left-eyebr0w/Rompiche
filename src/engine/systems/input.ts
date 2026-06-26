@@ -20,7 +20,14 @@ export function createInputSystem(ctx: EngineContext, deps: InputSystemDeps): Sy
   const headEntities = world.with('listener', 'transform')
 
   return () => {
-    const cmds = ctx.input.commands.splice(0)
+    /* Draine toutes les commandes SAUF `edit` : celles-ci sont consommées par
+       EditSystem (qui tourne juste après), pour garder la boucle d'édition isolée
+       de l'entrée générale (cadrage 07). Les autres sont retirées de la file ici. */
+    const cmds: typeof ctx.input.commands = []
+    const kept: typeof ctx.input.commands = []
+    for (const cmd of ctx.input.commands) (cmd.t === 'edit' ? kept : cmds).push(cmd)
+    ctx.input.commands.length = 0
+    ctx.input.commands.push(...kept)
     for (const cmd of cmds) {
       switch (cmd.t) {
         case 'save':
@@ -32,7 +39,6 @@ export function createInputSystem(ctx: EngineContext, deps: InputSystemDeps): Sy
         case 'reset':
           onReset?.()
           break
-        case 'paint':
         case 'setScale':
           break
       }
